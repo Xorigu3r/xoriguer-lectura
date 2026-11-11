@@ -70,3 +70,28 @@ class FormatsNousTest {
         c.tanca()
     }
 }
+
+class CbrTest {
+    private val dir = System.getenv("LLIBRES_PROVA")
+
+    @Test fun rarSenseCompressio() {
+        if (dir == null) return
+        for (f in listOf("comic_rar4.cbr", "comic_rar5.cbr", "comic_zip.cbr")) {
+            val doc = assertNotNull(cat.xoriguer.lectura.formats.Llegidors.paginat("$dir/$f", Format.CBR), f)
+            assertEquals(3, doc.pagines, f)
+            assertEquals(listOf("pag1.png", "pag2.png", "pag10.png"), (doc as Comic).imatges, f)
+            val png = assertNotNull(Plataforma.obreZip("$dir/comic_zip.cbr")).llegeix("pag2.png")
+            if (f != "comic_zip.cbr") {
+                val r = cat.xoriguer.lectura.formats.Rar.obre(Plataforma.llegeix("$dir/$f"))
+                assertTrue(r.llegeix("pag2.png")!!.contentEquals(png!!), "$f: la imatge no surt sencera")
+            }
+            doc.tanca()
+        }
+    }
+
+    @Test fun rarComprimit() {
+        if (dir == null) return
+        val e = kotlin.runCatching { cat.xoriguer.lectura.formats.Llegidors.paginat("$dir/comic_comprimit.cbr", Format.CBR) }.exceptionOrNull()
+        assertTrue(e?.message?.contains("CBZ") == true, "hauria d'explicar com convertir-lo: ${e?.message}")
+    }
+}

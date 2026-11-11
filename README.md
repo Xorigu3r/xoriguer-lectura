@@ -4,8 +4,8 @@ Lector de llibres electrònics gratuït i de codi obert per a **Android, Windows
 
 ![logo](empaquetar/logo/logo-1200.png)
 
-## Què fa (versió 0.3)
-**Formats:** EPUB, PDF, Kindle (MOBI, AZW, AZW3 sense DRM), FB2, Word (DOCX), LibreOffice (ODT), RTF, TXT i còmics CBZ.
+## Què fa (versió 0.5)
+**Formats:** EPUB, PDF, Kindle (MOBI, AZW, AZW3 sense DRM), FB2, Word (DOCX), LibreOffice (ODT), RTF, TXT i còmics CBZ i CBR (els CBR comprimits amb RAR, no).
 
 **Biblioteca**
 - Troba sola els llibres del dispositiu, amb portades, títols i autors.
@@ -19,7 +19,10 @@ Lector de llibres electrònics gratuït i de codi obert per a **Android, Windows
 - Temes Nit, Sèpia, Dia i Gris; mida de lletra, interlineat, marges i text justificat. També **fonts pròpies** (.ttf/.otf).
 - **Per pàgines, com un llibre:** «Pàgina 12 de 340» i el capítol a sota, i cada capítol comença en una pàgina nova.
 - Per passar pàgina: fletxes ‹ ›, tocar els costats, les tecles de fletxa (ordinador) o els botons de volum (Android).
-- Efecte de passar pàgina: girar, cobrir, lliscar o sense efecte. Si ho prefereixes, també hi ha el desplaçament continu.
+- Efecte de passar pàgina: full de paper (es doblega des de la cantonada), cobrir, lliscar o sense efecte. Si ho prefereixes, també hi ha el desplaçament continu.
+- **Llibre obert:** amb la pantalla ampla i apaïsada, es veuen dues pàgines alhora.
+- **Tipografia de llibre:** sagnat a la primera línia i, a Android, paraules partides amb guionet (català i castellà).
+- **Cercar dins del llibre**, sense haver de posar els accents.
 - **Lectura en veu alta**, també en segon pla i amb la pantalla bloquejada (Android).
 - **Cites** amb 6 colors, **notes** i **marcadors**. La secció «Cites i notes» les recull de tots els llibres.
 - **Diccionari** (Viquidiccionari / Wiktionary). La secció «Diccionari» recull totes les paraules buscades.
@@ -28,7 +31,7 @@ Lector de llibres electrònics gratuït i de codi obert per a **Android, Windows
 **Còpia i sincronització:** desa el progrés, les cites, les col·leccions i el diccionari en una carpeta que el núvol ja sincronitzi (Google Drive per a ordinador, Dropbox, OneDrive…). Es combinen les dades de tots els dispositius.
 
 ## Encara no
-- Formats CBR, DJVU, DOC antic i CHM.
+- DJVU, DOC antic, CHM i CBR comprimits amb RAR.
 - Sincronització directa amb el compte de Google Drive: cal registrar l'app a Google.
 - A l'iPhone: EPUB, PDF, veu i fonts pròpies (cal un Mac per compilar-ho i provar-ho).
 
@@ -37,8 +40,8 @@ Cal el JDK 17 i, per a Android, l'SDK d'Android.
 
 ```
 .\gradlew :composeApp:run              # Windows
-.\gradlew :composeApp:packageMsi       # instal·lador de Windows
-.gradlew :composeApp:assembleRelease  # APK d'Android (signat amb la clau de %USERPROFILE%.lectura-xoriguer)
+.\gradlew :composeApp:packageMsi       # instal·lador de Windows (cal WiX 3 al PATH)
+.\gradlew :composeApp:assembleRelease  # APK d'Android (signat amb la clau de %USERPROFILE%\.lectura-xoriguer)
 ```
 
 L'iPhone es compila des d'un Mac amb Xcode.
@@ -46,7 +49,7 @@ L'iPhone es compila des d'un Mac amb Xcode.
 ## Baixades
 A la pàgina de [Releases](https://github.com/Xorigu3r/xoriguer-lectura/releases):
 - **Android**: `LecturaXoriguer.apk`.
-- **Windows**: `LecturaXoriguer-Windows.zip`. Descomprimeix-lo i obre `Lectura Xoriguer.exe`.
+- **Windows**: `LecturaXoriguer-Instalador.msi` (instal·lador), o `LecturaXoriguer-Windows.zip`, que es descomprimeix i s'obre amb `Lectura Xoriguer.exe`.
 
 És una versió beta: encara no s'ha provat en un mòbil.
 

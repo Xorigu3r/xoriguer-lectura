@@ -20,10 +20,10 @@ class ActualitzacionsTest {
 
     @Test fun triaFitxerPerPlataforma() {
         val json = """{"tag_name":"v0.5.0","html_url":"https://github.com/x/y/releases/tag/v0.5.0","body":"**Novetats**\n- Una cosa `nova`",
-            "assets":[{"browser_download_url":"https://e/LecturaXoriguer.apk"},{"browser_download_url":"https://e/LecturaXoriguer-Windows.zip"}]}"""
+            "assets":[{"browser_download_url":"https://e/LecturaXoriguer.apk"},{"browser_download_url":"https://e/LecturaXoriguer-Windows.zip"},{"browser_download_url":"https://e/LecturaXoriguer-Instalador.msi"}]}"""
         assertEquals("https://e/LecturaXoriguer.apk", Actualitzacions.deRelease(json, "Android")!!.baixada)
         val w = assertNotNull(Actualitzacions.deRelease(json, "Windows"))
-        assertEquals("https://e/LecturaXoriguer-Windows.zip", w.baixada)
+        assertEquals("https://e/LecturaXoriguer-Instalador.msi", w.baixada) // l'instal·lador abans que el ZIP
         assertEquals("0.5.0", w.versio)
         assertEquals("Novetats\n- Una cosa nova", w.notes)
         assertEquals("https://github.com/x/y/releases/tag/v0.5.0", Actualitzacions.deRelease(json, "iOS")!!.baixada)

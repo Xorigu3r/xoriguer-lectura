@@ -27,6 +27,7 @@ object Llegidors {
             Format.DOCX -> ambZip(cami, Oficina::docxMetadades)
             Format.ODT -> ambZip(cami, Oficina::odtMetadades)
             Format.CBZ -> ambZip(cami) { Metadades(null, null, null, Comic(it).portada()) }
+            Format.CBR -> arxiuCbr(cami).let { a -> try { Metadades(null, null, null, Comic(a).portada()) } finally { a.tanca() } }
             else -> null
         }
 
@@ -42,17 +43,31 @@ object Llegidors {
     }
 
     fun missatgeNoSuportat(format: Format): String = when (format) {
-        Format.CBR -> "Els còmics CBR (comprimits amb RAR) encara no es poden obrir. Si el converteixes a CBZ, sí."
+        Format.CBR -> "Aquest còmic CBR està comprimit amb RAR i no es pot obrir. Converteix-lo a CBZ: descomprimeix-lo (per exemple amb 7-Zip) i torna'l a comprimir en ZIP, o fes-ho amb Calibre."
         Format.DJVU -> "Els fitxers DJVU encara no es poden obrir."
         Format.DOC -> "Els documents .doc antics encara no es poden obrir. Desa'l com a .docx des del Word o el LibreOffice."
         Format.CHM -> "Els fitxers d'ajuda CHM encara no es poden obrir."
         else -> "Format encara no suportat: ${format.etiqueta}"
     }
 
+    /**
+     * Un CBR pot ser un ZIP amb un altre nom (passa sovint) o un RAR. Del RAR només es poden llegir els fitxers
+     * desats sense compressió; si totes les imatges estan comprimides, es diu com convertir-lo.
+     */
+    private fun arxiuCbr(cami: String): ArxiuZip {
+        val bytes = Plataforma.llegeix(cami)
+        if (bytes.size > 2 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()) return Plataforma.obreZip(cami) ?: error("No s'ha pogut obrir el còmic")
+        if (!Rar.esRar(bytes)) error("Aquest fitxer no és un còmic CBR vàlid.")
+        val r = Rar.obre(bytes)
+        if (r.noms.none { it.substringAfterLast('.').lowercase() in setOf("jpg", "jpeg", "png", "webp", "gif", "bmp") }) error(missatgeNoSuportat(Format.CBR))
+        return r
+    }
+
     /** Documents que es mostren pàgina a pàgina (PDF i còmics). */
     fun paginat(cami: String, format: Format): DocumentPdf? = when (format) {
         Format.PDF -> Plataforma.obrePdf(cami)
         Format.CBZ -> Plataforma.obreZip(cami)?.let { Comic(it) }?.takeIf { it.pagines > 0 }
+        Format.CBR -> Comic(arxiuCbr(cami)).takeIf { it.pagines > 0 } ?: error(missatgeNoSuportat(Format.CBR))
         else -> null
     }
 }

@@ -59,4 +59,30 @@ class EfectePaginaTest {
             }
         }
     }
+
+    /** Llibre obert (llom al mig): el revers del full ha de ser la pàgina esquerra següent, ben orientada. */
+    @Test fun dibuixaDoble() {
+        val dir = System.getenv("PROVA_IMATGES")?.let(::File) ?: return
+        val W = 1200; val H = 800
+        for ((nom, fi) in listOf("doble-1" to Offset(.80f, .85f), "doble-2" to Offset(.62f, .70f), "doble-3" to Offset(.52f, .80f), "doble-4" to Offset(.60f, .30f))) {
+            val estat = EstatFulles(3, 0)
+            ImageComposeScene(W, H) {
+                Fulles(estat, paper, tinta, llom = .5f) { f ->
+                    androidx.compose.foundation.layout.Row(Modifier.fillMaxSize().background(paper)) {
+                        for (k in 0..1) Column(Modifier.weight(1f).padding(36.dp)) {
+                            Text(if (f == 0) "Pàgina ${k + 1}" else "PÀGINA ${f * 2 + k + 1} (següent)", color = tinta, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, fontSize = 26.sp)
+                            Text(text.repeat(3), color = tinta, fontFamily = FontFamily.Serif, fontSize = 17.sp, lineHeight = 26.sp, textAlign = TextAlign.Justify)
+                        }
+                    }
+                }
+            }.use { s ->
+                s.render(0)
+                val ini = if (nom == "doble-4") Offset(.98f * W, .03f * H) else Offset(.98f * W, .97f * H)
+                estat.comenca(ini)
+                estat.mou(Offset(fi.x * W, fi.y * H) + (ini - Offset(.98f * W, if (nom == "doble-4") .03f * H else .97f * H)))
+                s.render(16_000_000)
+                File(dir, "fulla-$nom.png").writeBytes(s.render(32_000_000).encodeToData(EncodedImageFormat.PNG)!!.bytes)
+            }
+        }
+    }
 }

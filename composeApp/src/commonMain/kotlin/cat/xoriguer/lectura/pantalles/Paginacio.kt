@@ -38,6 +38,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.intl.LocaleList
+import cat.xoriguer.lectura.Plataforma
+import cat.xoriguer.lectura.formats.Guionat
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
@@ -71,11 +76,11 @@ class PassadorPager(private val pager: PagerState, private val efecte: Efecte) :
 
 /** Pàgines amb l'efecte triat. `clau` canvia quan s'han de tornar a crear (pàgines noves, efecte nou). */
 @Composable
-fun Paginador(total: Int, inicial: Int, a: Ajustos, clau: Any, passador: (Passador) -> Unit, pagina: @Composable (Int) -> Unit) {
+fun Paginador(total: Int, inicial: Int, a: Ajustos, clau: Any, passador: (Passador) -> Unit, llom: Float = 0f, pagina: @Composable (Int) -> Unit) {
     if (a.efecte == Efecte.GIRAR) {
         val e = remember(clau) { EstatFulles(total, inicial) }
         LaunchedEffect(e) { passador(e) }
-        Fulles(e, a.tema.fons, a.tema.text) { p -> pagina(p) }
+        Fulles(e, a.tema.fons, a.tema.text, llom = llom) { p -> pagina(p) }
     } else {
         val pager = remember(clau) { PagerState(inicial.coerceIn(0, (total - 1).coerceAtLeast(0))) { total } }
         val pas = remember(pager) { PassadorPager(pager, a.efecte) }
@@ -140,16 +145,27 @@ class NavLlista(private val l: LazyListState, private val blocs: Int, private va
     override fun perDesar() = l.firstVisibleItemIndex to l.firstVisibleItemScrollOffset
 }
 
-/** Per pàgines: `inici[p]` = (paràgraf, caràcter) on comença la pàgina p. */
-class NavPagines(private val pas: Passador, private val inici: List<Pair<Int, Int>>, private val pdf: Boolean) : Navegacio {
+/**
+ * Per pàgines. `pagines[p]` = (paràgraf, caràcter) on comença la pàgina p. Amb el llibre obert es passen
+ * dues pàgines alhora (`perFull` = 2): el passador compta fulls, no pàgines.
+ */
+class NavPagines(private val pas: Passador, private val pagines: List<Pair<Int, Int>>, private val pdf: Boolean, private val perFull: Int = 1) : Navegacio {
+    private val inici = pagines.filterIndexed { i, _ -> i % perFull == 0 }
     private val actualP get() = pas.actual
     override val blocActual get() = inici.getOrNull(actualP)?.first ?: 0
     override val fraccio get() = if (inici.size <= 1) 1f else actualP.toFloat() / (inici.size - 1)
-    override val etiqueta get() = "Pàgina ${actualP + 1} de ${inici.size}"
+    override val etiqueta: String
+        get() {
+            val p = actualP * perFull
+            return if (perFull == 2 && p + 1 < pagines.size) "Pàgines ${p + 1}–${p + 2} de ${pagines.size}" else "Pàgina ${p + 1} de ${pagines.size}"
+        }
     override val total get() = inici.size
     override val actual get() = actualP
 
-    fun paginaDe(bloc: Int, caracter: Int = 0) = paginaDe(inici, bloc, caracter)
+    /** Full on cau (paràgraf, caràcter). */
+    fun paginaDe(bloc: Int, caracter: Int = 0) = paginaDe(pagines, bloc, caracter) / perFull
+    /** Número de pàgina (no de full) on cau (paràgraf, caràcter). */
+    fun numPagina(bloc: Int, caracter: Int = 0) = paginaDe(pagines, bloc, caracter)
 
     private suspend fun ves(p: Int, anima: Boolean) {
         pas.ves(p.coerceIn(0, inici.lastIndex.coerceAtLeast(0)), anima)
@@ -160,7 +176,7 @@ class NavPagines(private val pas: Passador, private val inici: List<Pair<Int, In
     override suspend fun anterior() = ves(actualP - 1, true)
     override suspend fun segueix(bloc: Int) {
         val p = paginaDe(bloc, 0)
-        // si el paràgraf comença en aquesta pàgina o en una d'anterior que continua aquí, no cal moure's
+        // si el paràgraf comença en aquest full o en un d'anterior que continua aquí, no cal moure's
         if (p != actualP && !(p < actualP && inici.getOrNull(actualP)?.first == bloc)) ves(p, true)
     }
     // el desplaçament es desa en negatiu (caràcter) per distingir-lo dels píxels del mode continu
@@ -186,13 +202,27 @@ data class Tros(val bloc: Int, val ini: Int, val fi: Int)
 data class Pagina(val trossos: List<Tros>)
 
 /** Estils i espais comuns a la paginació i al dibuix (si no coincideixen, el text es tallaria). */
-class EstilsPagina(a: Ajustos, familia: FontFamily, private val color: Color) {
-    val paragraf = TextStyle(color = color, fontFamily = familia, fontSize = a.mida.sp, lineHeight = a.interlineat.em,
-        textAlign = if (a.justificat) TextAlign.Justify else TextAlign.Start)
+class EstilsPagina(a: Ajustos, familia: FontFamily, private val color: Color, val idioma: String = "ca") {
+    /** Partir paraules a final de línia (català i castellà). */
+    // Només a Android: el motor de text d'escriptori talla pels guions suaus però no hi dibuixa el guionet
+    val guiona = a.guionat && a.justificat && (idioma == "ca" || idioma == "es") && Plataforma.nom == "Android"
+    private val continua = TextStyle(color = color, fontFamily = familia, fontSize = a.mida.sp, lineHeight = a.interlineat.em,
+        textAlign = if (a.justificat) TextAlign.Justify else TextAlign.Start,
+        hyphens = if (guiona) Hyphens.Auto else Hyphens.None, localeList = if (guiona) LocaleList(idioma) else null)
+    /** Inici de paràgraf: amb sagnat a la primera línia (com als llibres), si està triat. */
+    // (el sagnat en sp i no en em: amb em, el mesurador de text d'escriptori falla)
+    val paragraf = if (a.sagnat) continua.copy(textIndent = TextIndent(firstLine = (a.mida * 1.4f).sp)) else continua
     val titol = TextStyle(color = color, fontFamily = familia, fontWeight = FontWeight.Bold, fontSize = (a.mida * 1.35f).sp, lineHeight = 1.25.em, textAlign = TextAlign.Center)
     val subtitol = TextStyle(color = color, fontFamily = familia, fontWeight = FontWeight.SemiBold, fontSize = (a.mida * 1.12f).sp, lineHeight = 1.3.em)
-    val espaiParagraf = (a.mida * .55f).dp
-    fun estil(t: TipusBloc) = when (t) { TipusBloc.TITOL -> titol; TipusBloc.SUBTITOL -> subtitol; TipusBloc.PARAGRAF -> paragraf }
+    // amb sagnat, els paràgrafs gairebé no se separen (com en un llibre imprès)
+    val espaiParagraf = (a.mida * if (a.sagnat) .12f else .55f).dp
+    /** `inici`: el tros comença el paràgraf (un tros que continua d'una pàgina anterior no porta sagnat). */
+    fun estil(t: TipusBloc, inici: Boolean = true) = when (t) {
+        TipusBloc.TITOL -> titol; TipusBloc.SUBTITOL -> subtitol
+        TipusBloc.PARAGRAF -> if (inici) paragraf else continua
+    }
+    /** Text que es mostra d'un paràgraf (amb guions suaus si es parteixen paraules). */
+    fun guionat(t: TipusBloc, text: String): Guionat? = if (guiona && t == TipusBloc.PARAGRAF) Guionat.de(text, idioma) else null
     /** Espai abans d'un tros: a dalt de la pàgina només en deixen els títols. */
     fun abans(t: TipusBloc, primer: Boolean) = when (t) {
         TipusBloc.TITOL -> if (primer) 24.dp else 32.dp
@@ -214,11 +244,15 @@ fun pagina(c: Contingut, m: TextMeasurer, e: EstilsPagina, ample: Int, alt: Int,
             if (b.tipus == TipusBloc.TITOL) tanca()
             var ini = 0
             val text = b.text
+            val g = e.guionat(b.tipus, text)
             while (ini < text.length) {
                 val primer = actual.isEmpty()
                 val abans = e.abans(b.tipus, primer).toPx()
                 val despres = e.despres(b.tipus).toPx()
-                val l: TextLayoutResult = m.measure(text.substring(ini), e.estil(b.tipus), constraints = restriccio)
+                // es mesura el text tal com es veurà (amb els guions suaus); els talls es tornen a l'original
+                val hIni = g?.mostrat(ini) ?: ini
+                val mostrat = g?.text ?: text
+                val l: TextLayoutResult = m.measure(mostrat.substring(hIni), e.estil(b.tipus, ini == 0), constraints = restriccio)
                 val lloc = alt - y - abans
                 if (l.size.height <= lloc) {
                     actual += Tros(i, ini, text.length); y += abans + l.size.height + despres; break
@@ -229,7 +263,7 @@ fun pagina(c: Contingut, m: TextMeasurer, e: EstilsPagina, ample: Int, alt: Int,
                 // un títol no es parteix; i no es deixa una sola línia a baix si el paràgraf és llarg (línia vídua)
                 if (!primer && (n == 0 || b.tipus != TipusBloc.PARAGRAF || (n == 1 && l.lineCount > 2))) { tanca(); continue }
                 if (n == 0) n = 1 // una línia més alta que la pàgina: es posa igualment
-                val fi = ini + l.getLineEnd(n - 1)
+                val fi = (hIni + l.getLineEnd(n - 1)).let { h -> g?.original(h) ?: h }
                 if (fi <= ini) { actual += Tros(i, ini, text.length); tanca(); break }
                 actual += Tros(i, ini, fi)
                 tanca()
@@ -320,20 +354,24 @@ private fun BotoFletxa(m: Modifier, icona: androidx.compose.ui.graphics.vector.I
 /** Llibre de text per pàgines. Avisa amb `nav` quan la paginació està llesta. */
 @Composable
 fun TextPaginat(
-    c: Contingut, a: Ajustos, cites: Map<Int, List<Anotacio>>, llegint: Int?,
+    c: Contingut, a: Ajustos, idioma: String, cites: Map<Int, List<Anotacio>>, llegint: Int?,
     inicial: Pair<Int, Int>, nav: (NavPagines?) -> Unit, mantePremut: (Int) -> Unit, toca: (Float) -> Unit,
 ) {
     val m = rememberTextMeasurer(cacheSize = 0)
     val familia = remember(a.font) { familiaDe(a.font) }
     // per mesurar només compta el que canvia la mida del text; el color (tema) només es fa servir per dibuixar
-    val mesura = remember(a.mida, a.interlineat, a.justificat, familia) { EstilsPagina(a, familia, Color.Black) }
-    val estils = remember(mesura, a.tema) { EstilsPagina(a, familia, a.tema.text) }
+    val mesura = remember(a.mida, a.interlineat, a.justificat, a.sagnat, a.guionat, familia, idioma) { EstilsPagina(a, familia, Color.Black, idioma) }
+    val estils = remember(mesura, a.tema) { EstilsPagina(a, familia, a.tema.text, idioma) }
     val densitat = LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val ampleTot = constraints.maxWidth.toFloat()
-        val margeLat = a.marge.dp + 36.dp // espai per a les fletxes
+        // Llibre obert: dues pàgines quan la pantalla és ampla i apaïsada (ordinador, tauleta o mòbil girat)
+        val doble = a.duesPagines && maxWidth > maxHeight && maxWidth >= 840.dp
+        val perFull = if (doble) 2 else 1
+        val ampleFull = maxWidth / perFull
+        val margeLat = a.marge.dp + if (doble) 28.dp else 36.dp // espai per a les fletxes
         val maxAmple = (a.mida * 44).dp
-        val ampleText = (maxWidth - margeLat * 2).coerceAtMost(maxAmple).coerceAtLeast(120.dp)
+        val ampleText = (ampleFull - margeLat * 2).coerceAtMost(maxAmple).coerceAtLeast(120.dp)
         val dalt = 40.dp; val baix = 40.dp
         val altText = (maxHeight - dalt - baix).coerceAtLeast(120.dp)
         val ampPx = with(densitat) { ampleText.roundToPx() }
@@ -352,41 +390,63 @@ fun TextPaginat(
             return@BoxWithConstraints
         }
         val inici = remember(pp) { pp.map { p -> p.trossos.firstOrNull()?.let { it.bloc to it.ini } ?: (Int.MAX_VALUE to 0) } }
-        // la pàgina on érem (es manté en canviar la lletra: es busca on cau el mateix caràcter)
-        // (on érem es llegeix en el moment de refer les pàgines, no abans)
+        // on érem es llegeix en el moment de refer les pàgines (es manté en canviar la lletra o girar la pantalla)
         val onEra by rememberUpdatedState(inicial)
-        var pas by remember(pp) { mutableStateOf<Passador?>(null) }
-        val nv = remember(pas, inici) { pas?.let { NavPagines(it, inici, false) } }
+        var pas by remember(pp, perFull) { mutableStateOf<Passador?>(null) }
+        val nv = remember(pas, inici, perFull) { pas?.let { NavPagines(it, inici, false, perFull) } }
         LaunchedEffect(nv) { nav(nv) }
         DisposableEffect(Unit) { onDispose { nav(null) } }
 
-        Paginador(pp.size, paginaDe(inici, onEra.first, onEra.second), a, pp to a.efecte, { pas = it }) { p ->
-            Box(
-                Modifier.fillMaxSize().background(a.tema.fons)
-                    .pointerInput(Unit) { detectTapGestures(onTap = { toca(it.x / size.width) }) },
-            ) {
+        @Composable
+        fun Pagina(p: Int, xFull: Float) {
+            Box(Modifier.fillMaxHeight().width(ampleFull).pointerInput(xFull) { detectTapGestures(onTap = { toca((xFull + it.x) / ampleTot) }) }) {
+                if (p >= pp.size) return@Box
                 Column(Modifier.align(Alignment.TopCenter).padding(top = dalt).width(ampleText).height(altText)) {
                     pp[p].trossos.forEachIndexed { k, t ->
                         val b = c.blocs[t.bloc]
-                        val meves = remember(cites, t) { citesDelTros(cites[t.bloc].orEmpty(), t) }
+                        val g = remember(t.bloc, mesura) { estils.guionat(b.tipus, b.text) }
+                        val hIni = g?.mostrat(t.ini) ?: t.ini
+                        val hFi = g?.mostrat(t.fi) ?: t.fi
+                        val meves = remember(cites, t, g) {
+                            citesDelTros(cites[t.bloc].orEmpty(), t).map { x ->
+                                if (g == null) x else x.copy(inici = g.mostrat(t.ini + x.inici) - hIni, fi = g.mostrat(t.ini + x.fi) - hIni)
+                            }
+                        }
                         var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
                         Text(
-                            ambCites(b.text.substring(t.ini, t.fi), meves),
-                            style = estils.estil(b.tipus),
+                            ambCites((g?.text ?: b.text).substring(hIni, hFi), meves),
+                            style = estils.estil(b.tipus, t.ini == 0),
                             onTextLayout = { layout = it },
                             modifier = Modifier.fillMaxWidth()
                                 .padding(top = estils.abans(b.tipus, k == 0), bottom = estils.despres(b.tipus))
                                 .then(if (llegint == t.bloc) Modifier.background(cat.xoriguer.lectura.tema.Xoriguer.Taronja.copy(alpha = .13f)) else Modifier)
                                 .drawBehind { pintaCites(layout, meves, a.tema) }
-                                .pointerInput(t.bloc) {
+                                .pointerInput(t.bloc, xFull) {
                                     detectTapGestures(
-                                        onTap = { o -> toca(((ampleTot - size.width) / 2f + o.x) / ampleTot) },
+                                        onTap = { o -> toca((xFull + (ampleFull.toPx() - size.width) / 2f + o.x) / ampleTot) },
                                         onLongPress = { mantePremut(t.bloc) },
                                     )
                                 },
                         )
                     }
                 }
+            }
+        }
+
+        val fulls = (pp.size + perFull - 1) / perFull
+        Paginador(fulls, paginaDe(inici, onEra.first, onEra.second) / perFull, a, Triple(pp, a.efecte, perFull), { pas = it }, llom = if (doble) .5f else 0f) { f ->
+            Row(
+                Modifier.fillMaxSize().background(a.tema.fons).then(
+                    // el llom del llibre obert: una ombra suau al mig
+                    if (doble) Modifier.drawBehind {
+                        val mig = size.width / 2
+                        drawRect(Brush.horizontalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .10f), Color.Black.copy(alpha = .22f)), startX = mig - 46f, endX = mig), topLeft = Offset(mig - 46f, 0f), size = androidx.compose.ui.geometry.Size(46f, size.height))
+                        drawRect(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = .22f), Color.Black.copy(alpha = .08f), Color.Transparent), startX = mig, endX = mig + 46f), topLeft = Offset(mig, 0f), size = androidx.compose.ui.geometry.Size(46f, size.height))
+                    } else Modifier,
+                ),
+            ) {
+                Pagina(f * perFull, 0f)
+                if (doble) Pagina(f * perFull + 1, ampleTot / 2)
             }
         }
     }

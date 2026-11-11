@@ -44,7 +44,8 @@ object Actualitzacions {
         val fitxers = j.llista("assets").mapNotNull { it.text("browser_download_url") }
         val baixada = when (plataforma) {
             "Android" -> fitxers.firstOrNull { it.endsWith(".apk") }
-            "Windows" -> fitxers.firstOrNull { it.endsWith(".zip") || it.endsWith(".msi") || it.endsWith(".exe") }
+            // a Windows, millor l'instal·lador; si no n'hi ha, el ZIP
+            "Windows" -> fitxers.firstOrNull { it.endsWith(".msi") } ?: fitxers.firstOrNull { it.endsWith(".zip") }
             else -> null
         } ?: pagina
         val notes = j.text("body").orEmpty().replace("**", "").replace("`", "").trim()

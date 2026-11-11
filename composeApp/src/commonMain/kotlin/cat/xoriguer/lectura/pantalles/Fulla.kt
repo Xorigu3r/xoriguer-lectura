@@ -52,29 +52,34 @@ class EstatFulles(pagines: Int, inicial: Int) : Passador {
     var baix by mutableStateOf(true)
         private set
     var mida by mutableStateOf(Offset(1f, 1f)) // amplada, alçada en píxels
+    /** On és el llom, en fracció de l'amplada: 0 = a l'esquerra (una pàgina), 0.5 = al mig (llibre obert). */
+    var llom by mutableFloatStateOf(0f)
     private val t = Animatable(0f)
     private var arrossega: Offset? = null
 
     private val w get() = mida.x
     private val h get() = mida.y
+    private val lx get() = llom * w
     private val cantonada get() = Offset(w, if (baix) h else 0f)
-    private val girada get() = Offset(-w, if (baix) h else 0f)
+    /** Full girat del tot: la cantonada ha passat a l'altra banda del llom. */
+    private val girada get() = Offset(2 * lx - w, if (baix) h else 0f)
 
     /** Camí automàtic (fletxes, tecles, tocs): la cantonada s'aixeca en arc i va cap a l'esquerra. */
     private fun cami(x: Float): Offset {
         val alca = h * .12f * sin(PI.toFloat() * x)
-        return limita(Offset(w - 2 * w * x, if (baix) h - alca else alca))
+        return limita(Offset(w - 2 * (w - lx) * x, if (baix) h - alca else alca))
     }
 
     /** El full està cosit al llom (esquerra): la cantonada no es pot allunyar més que l'amplada de la pàgina. */
     private fun limita(p: Offset): Offset {
-        val llom = Offset(0f, if (baix) h else 0f)
-        val d = p - llom
+        val llomP = Offset(lx, if (baix) h else 0f)
+        val d = p - llomP
         val l = d.getDistance()
-        var q = if (l > w) llom + d * (w / l) else p
+        val ample = w - lx
+        var q = if (l > ample) llomP + d * (ample / l) else p
         // ni més enllà de la diagonal des de l'altre extrem del llom
-        val altre = Offset(0f, if (baix) 0f else h)
-        val diag = hypot(w, h)
+        val altre = Offset(lx, if (baix) 0f else h)
+        val diag = hypot(ample, h)
         val e = q - altre
         if (e.getDistance() > diag) q = altre + e * (diag / e.getDistance())
         return q
@@ -102,8 +107,10 @@ class EstatFulles(pagines: Int, inicial: Int) : Passador {
         if (direccio != 0) return
         baix = o.y > h / 2
         arrossega = o
-        if (o.x > w / 2 && actual < total - 1) { direccio = 1; punt = cantonada }
-        else if (o.x <= w / 2 && actual > 0) { direccio = -1; punt = girada }
+        // una pàgina: meitat dreta endavant, esquerra enrere; llibre obert: pàgina dreta endavant, esquerra enrere
+        val partio = if (llom > 0f) lx else w / 2
+        if (o.x > partio && actual < total - 1) { direccio = 1; punt = cantonada }
+        else if (o.x <= partio && actual > 0) { direccio = -1; punt = girada }
         else arrossega = null
     }
 
@@ -118,7 +125,7 @@ class EstatFulles(pagines: Int, inicial: Int) : Passador {
         if (arrossega == null) return
         arrossega = null
         // fins on ha arribat, de 0 (sense girar) a 1 (girat del tot)
-        val fet = ((w - punt.x) / (2 * w)).coerceIn(0f, 1f)
+        val fet = ((w - punt.x) / (2 * (w - lx))).coerceIn(0f, 1f)
         val passa = if (direccio == 1) fet > .25f else fet < .75f
         val desti = if (passa == (direccio == 1)) girada else cantonada
         val anim = Animatable(punt, Offset.VectorConverter)
@@ -133,7 +140,8 @@ class EstatFulles(pagines: Int, inicial: Int) : Passador {
  * (GraphicsLayer) i es componen a mà; a sota hi ha el contingut de veritat (per tocar i mantenir premut).
  */
 @Composable
-fun Fulles(estat: EstatFulles, paper: Color, tinta: Color, modifier: Modifier = Modifier, pagina: @Composable (Int) -> Unit) {
+fun Fulles(estat: EstatFulles, paper: Color, tinta: Color, modifier: Modifier = Modifier, llom: Float = 0f, pagina: @Composable (Int) -> Unit) {
+    estat.llom = llom
     val anterior = rememberGraphicsLayer()
     val actual = rememberGraphicsLayer()
     val seguent = rememberGraphicsLayer()
@@ -157,8 +165,8 @@ fun Fulles(estat: EstatFulles, paper: Color, tinta: Color, modifier: Modifier = 
                 val revers = lerp(paper, tinta, .06f)
                 when (estat.direccio) {
                     0 -> drawLayer(actual)
-                    1 -> fullaDoblegada(actual, seguent, estat.punt, Offset(size.width, if (estat.baix) size.height else 0f), revers)
-                    else -> fullaDoblegada(anterior, actual, estat.punt, Offset(size.width, if (estat.baix) size.height else 0f), revers)
+                    1 -> fullaDoblegada(actual, seguent, estat.punt, Offset(size.width, if (estat.baix) size.height else 0f), revers, llom * size.width)
+                    else -> fullaDoblegada(anterior, actual, estat.punt, Offset(size.width, if (estat.baix) size.height else 0f), revers, llom * size.width)
                 }
             },
     ) {
@@ -171,7 +179,7 @@ fun Fulles(estat: EstatFulles, paper: Color, tinta: Color, modifier: Modifier = 
 }
 
 /** Dibuixa la pàgina A doblegant-se cap a P (des de la cantonada C) sobre la pàgina B. */
-fun DrawScope.fullaDoblegada(a: GraphicsLayer, b: GraphicsLayer, p: Offset, c: Offset, revers: Color) {
+fun DrawScope.fullaDoblegada(a: GraphicsLayer, b: GraphicsLayer, p: Offset, c: Offset, revers: Color, llom: Float = 0f) {
     val w = size.width; val h = size.height
     val cp = c - p
     val dist = cp.getDistance()
@@ -210,8 +218,18 @@ fun DrawScope.fullaDoblegada(a: GraphicsLayer, b: GraphicsLayer, p: Offset, c: O
                 values[Matrix.ScaleX] = 1 - 2 * n.x * n.x; values[Matrix.SkewX] = -2 * n.x * n.y; values[Matrix.TranslateX] = 2 * dMn * n.x
                 values[Matrix.SkewY] = -2 * n.x * n.y; values[Matrix.ScaleY] = 1 - 2 * n.y * n.y; values[Matrix.TranslateY] = 2 * dMn * n.y
             }
-            withTransform({ transform(reflexio) }) { drawLayer(a) }
-            drawRect(revers.copy(alpha = .9f))
+            if (llom > 0f) {
+                // Llibre obert: el revers del full és la pàgina esquerra del full següent (B). Un punt X del full
+                // (pàgina dreta d'A) cau a R(X) i hi mostra el punt de B simètric respecte del llom: S = R·M.
+                val mirall = Matrix().apply { values[Matrix.ScaleX] = -1f; values[Matrix.TranslateX] = 2 * llom }
+                // (Matrix de Compose: a.timesAssign(b) aplica primer a i després b; aquí cal primer el mirall i després la reflexió)
+                val t = Matrix(mirall.values.copyOf()).apply { timesAssign(reflexio) }
+                withTransform({ transform(t) }) { drawLayer(b) }
+            } else {
+                // Una sola pàgina: el revers és paper, amb el text de l'altra cara que s'hi transparenta
+                withTransform({ transform(reflexio) }) { drawLayer(a) }
+                drawRect(revers.copy(alpha = .9f))
+            }
             // volum del paper: fosc tocant al plec, llum al mig, una mica fosc a la vora
             val ample = dist / 2f
             drawRect(

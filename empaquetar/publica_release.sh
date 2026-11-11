@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Crea una Release a GitHub i hi puja dist/LecturaXoriguer.apk i dist/LecturaXoriguer-Windows.zip.
+# Crea una Release a GitHub i hi puja dist/LecturaXoriguer.apk, dist/LecturaXoriguer-Windows.zip
+# i, si hi és, dist/LecturaXoriguer-Instalador.msi.
 # Ús: bash empaquetar/publica_release.sh v0.1.1 "Títol" fitxer_notes.md
 # Fa servir el token de GitHub que ja té guardat git (git credential fill). No cal gh.
 set -euo pipefail
@@ -18,13 +19,15 @@ H=(-H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json")
 curl -sS -o "$TMP/resp.json" -w "release %{http_code}\n" "${H[@]}" -H "Content-Type: application/json; charset=utf-8" \
   --data-binary @"$TMP/rel.json" https://api.github.com/repos/Xorigu3r/xoriguer-lectura/releases
 ID=$(python -I -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['id'])" "$TMP/resp.json")
-for f in LecturaXoriguer.apk LecturaXoriguer-Windows.zip; do
-  case $f in *.apk) T=application/vnd.android.package-archive;; *) T=application/zip;; esac
+FITXERS="LecturaXoriguer.apk LecturaXoriguer-Windows.zip"
+[ -f "$ARREL/dist/LecturaXoriguer-Instalador.msi" ] && FITXERS="$FITXERS LecturaXoriguer-Instalador.msi"
+for f in $FITXERS; do
+  case $f in *.apk) T=application/vnd.android.package-archive;; *.msi) T=application/x-msi;; *) T=application/zip;; esac
   curl -sS -o /dev/null -w "$f %{http_code}\n" "${H[@]}" -H "Content-Type: $T" --data-binary @"$ARREL/dist/$f" \
     "https://uploads.github.com/repos/Xorigu3r/xoriguer-lectura/releases/$ID/assets?name=$f"
 done
 # Comprova que el que es baixa és idèntic
-for f in LecturaXoriguer.apk LecturaXoriguer-Windows.zip; do
+for f in $FITXERS; do
   curl -sSfL -o "$TMP/$f" "https://github.com/Xorigu3r/xoriguer-lectura/releases/download/$TAG/$f"
   a=$(sha256sum "$ARREL/dist/$f" | cut -c1-16); b=$(sha256sum "$TMP/$f" | cut -c1-16)
   [ "$a" = "$b" ] && echo "$f idèntic ($a)" || { echo "$f DIFERENT"; exit 1; }

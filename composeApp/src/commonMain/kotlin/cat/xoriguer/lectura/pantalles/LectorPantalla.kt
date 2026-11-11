@@ -83,8 +83,13 @@ data class Ajustos(
     val fletxes: Boolean = true,
     /** Botons de volum per passar pàgina (Android). */
     val volum: Boolean = true,
+    /** Tipografia de llibre: sagnat a la primera línia i paraules partides a final de línia. */
+    val sagnat: Boolean = true,
+    val guionat: Boolean = true,
+    /** Dues pàgines (llibre obert) quan la pantalla és ampla i apaïsada. */
+    val duesPagines: Boolean = true,
 ) {
-    fun desa() = Plataforma.desaDada("lector.txt", listOf(mida, interlineat, marge, font, tema.name, justificat, passaPagina, velocitatVeu, pagines, efecte.name, fletxes, volum).joinToString("\n"))
+    fun desa() = Plataforma.desaDada("lector.txt", listOf(mida, interlineat, marge, font, tema.name, justificat, passaPagina, velocitatVeu, pagines, efecte.name, fletxes, volum, sagnat, guionat, duesPagines).joinToString("\n"))
 
     companion object {
         fun carrega(): Ajustos {
@@ -99,6 +104,7 @@ data class Ajustos(
                 s(6)?.toBooleanStrictOrNull() ?: d.passaPagina, s(7)?.toFloatOrNull() ?: d.velocitatVeu,
                 s(8)?.toBooleanStrictOrNull() ?: d.pagines, s(9)?.let { runCatching { Efecte.valueOf(it) }.getOrNull() } ?: d.efecte,
                 s(10)?.toBooleanStrictOrNull() ?: d.fletxes, s(11)?.toBooleanStrictOrNull() ?: d.volum,
+                s(12)?.toBooleanStrictOrNull() ?: d.sagnat, s(13)?.toBooleanStrictOrNull() ?: d.guionat, s(14)?.toBooleanStrictOrNull() ?: d.duesPagines,
             )
         }
     }
@@ -130,6 +136,9 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
     var miniatures by remember { mutableStateOf(false) }
     var seleccionat by remember { mutableStateOf<Int?>(null) }
     var paraula by remember { mutableStateOf<String?>(null) }
+    var cercant by remember { mutableStateOf(false) }
+    var textCercat by remember { mutableStateOf("") }
+    var troballa by remember { mutableStateOf<Troballa?>(null) }
 
     // On érem: el mode per pàgines desa el caràcter en negatiu; el continu, els píxels en positiu
     val inicial = remember { bib.progres[llibre.cami] }
@@ -167,7 +176,14 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
     val nav: Navegacio? = if (total == 0) null else if (perPagines) navPagines else navLlista
 
     val meves = bib.anotacions.totes.filter { it.cami == llibre.cami }
-    val citesPerBloc = remember(meves) { meves.filter { it.tipus == TipusAnotacio.CITA }.groupBy { it.bloc } }
+    // les cites, i a més el resultat de la cerca ressaltat com si fos una cita taronja
+    val citesPerBloc = remember(meves, troballa) {
+        val m = meves.filter { it.tipus == TipusAnotacio.CITA }.groupBy { it.bloc }
+        troballa?.let { t ->
+            val marca = Anotacio("cerca", llibre.cami, "", null, TipusAnotacio.CITA, t.bloc, t.ini, t.fi, "", "", ColorCita.TARONJA, 0, 0f)
+            m + (t.bloc to (m[t.bloc].orEmpty() + marca))
+        } ?: m
+    }
     val blocActual = nav?.blocActual ?: posicio.first
     val marcadorAqui = meves.firstOrNull { it.tipus == TipusAnotacio.MARCADOR && it.bloc == blocActual }
 
@@ -227,7 +243,7 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
             is Estat.Error -> Text(e.missatge, Modifier.align(Alignment.Center).padding(32.dp), color = tema.text, textAlign = TextAlign.Center)
             is Estat.Text ->
                 if (perPagines) MarcPagines(nav, tema, ajustos.fletxes, capitol, ::enrere, ::endavant) {
-                    TextPaginat(e.c, ajustos, citesPerBloc, veu?.takeIf { it.actiu }?.index, posicio, { navPagines = it }, { seleccionat = it }, ::toca)
+                    TextPaginat(e.c, ajustos, e.idioma, citesPerBloc, veu?.takeIf { it.actiu }?.index, posicio, { navPagines = it }, { seleccionat = it }, ::toca)
                 }
                 else TextLlibre(e.c, llista, ajustos, citesPerBloc, veu?.takeIf { it.actiu }?.index, { seleccionat = it }, ::toca)
             is Estat.Pdf ->
@@ -245,6 +261,7 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
                         Text(llibre.titol, color = Xoriguer.Crema, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         llibre.autor?.let { Text(it, color = Xoriguer.Mut, fontSize = 12.sp, maxLines = 1) }
                     }
+                    if (text != null) IconButton({ cercant = true }) { Icon(Icons.Default.Search, "Cerca dins del llibre", tint = Xoriguer.Crema) }
                     if (veu != null && Plataforma.veu.disponible) IconButton({
                         controls = false
                         if (veu.actiu) veu.pausa() else veu.comenca(blocActual)
@@ -290,6 +307,10 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
         buscaParaula = { paraula = it },
         llegeixDesDaqui = if (veu != null && Plataforma.veu.disponible) ({ veu.comenca(sel) }) else null,
     ) { seleccionat = null }
+    if (cercant && text != null) PanellCerca(
+        text.c, text.c.capitols, navPagines?.let { n -> { t: Troballa -> n.numPagina(t.bloc, t.ini) } }, textCercat,
+        ves = { t, q -> troballa = t; textCercat = q; cercant = false; controls = false; scope.launch { nav?.vesABloc(t.bloc, t.ini) } },
+    ) { cercant = false }
     paraula?.let { p -> DialegDiccionari(p, text?.idioma ?: "ca", llibre.titol, bib.diccionari) { paraula = null } }
 }
 
@@ -467,6 +488,14 @@ private fun PanellAjustos(a: Ajustos, esPdf: Boolean, canvia: (Ajustos) -> Unit,
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Opcio("Fletxes ‹ ›", a.fletxes) { canvia(a.copy(fletxes = !a.fletxes)) }
                     Opcio("Botons de volum", a.volum) { canvia(a.copy(volum = !a.volum)) }
+                    if (!esPdf) Opcio("Dues pàgines si cap", a.duesPagines) { canvia(a.copy(duesPagines = !a.duesPagines)) }
+                }
+                if (!esPdf) {
+                    Text("Tipografia de llibre", color = Xoriguer.Mut, fontSize = 12.sp)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Opcio("Sagnat", a.sagnat) { canvia(a.copy(sagnat = !a.sagnat)) }
+                        if (Plataforma.nom == "Android") Opcio("Partir paraules (guionet)", a.guionat) { canvia(a.copy(guionat = !a.guionat)) }
+                    }
                 }
             }
             if (esPdf) return@Column

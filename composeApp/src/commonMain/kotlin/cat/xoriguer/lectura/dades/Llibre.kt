@@ -11,7 +11,7 @@ enum class Format(val extensions: List<String>, val etiqueta: String, val suport
     RTF(listOf("rtf"), "RTF", true),
     TXT(listOf("txt"), "TXT", true),
     CBZ(listOf("cbz"), "Còmic", true, paginat = true),
-    CBR(listOf("cbr"), "CBR", false, paginat = true),
+    CBR(listOf("cbr"), "CBR", true, paginat = true),
     DJVU(listOf("djvu", "djv"), "DJVU", false, paginat = true),
     DOC(listOf("doc"), "DOC", false),
     CHM(listOf("chm"), "CHM", false);
