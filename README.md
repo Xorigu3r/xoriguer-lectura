@@ -4,15 +4,31 @@ Lector de llibres electrònics gratuït i de codi obert per a **Android, Windows
 
 ![logo](empaquetar/logo/logo-1200.png)
 
-## Què fa (versió 0.1)
-- Troba els llibres del dispositiu i els mostra en una biblioteca amb portades, en quadrícula o en llista.
-- Cerca per títol o autor, filtres per format, "Continua llegint" i ordenació.
-- Llegeix **EPUB, FB2, TXT i PDF**.
-- Temes Nit, Sèpia, Dia i Gris; mida de lletra, interlineat, marges, lletra amb serif o sense, text justificat.
-- Índex de capítols, barra de posició i desat del punt de lectura.
+## Què fa (versió 0.2)
+**Formats:** EPUB, PDF, Kindle (MOBI, AZW, AZW3 sense DRM), FB2, Word (DOCX), LibreOffice (ODT), RTF, TXT i còmics CBZ.
 
-## Properament
-Cites i notes amb colors, marcadors, més formats (MOBI, AZW3, CBZ, DJVU, DOCX…), diccionari, fonts pròpies, miniatures de pàgines, lectura en veu alta i sincronització amb Google Drive.
+**Biblioteca**
+- Troba sola els llibres del dispositiu, amb portades, títols i autors.
+- 4 vistes (quadrícula, miniatures, completa i breu), cerca, filtres per format i «Continua llegint».
+- Agrupa per autor, sèrie, format, carpeta o col·lecció. Col·leccions pròpies.
+- Troba llibres duplicats. Canvia el nom dels fitxers, mou-los a una altra carpeta o esborra'ls.
+
+**Llibres gratuïts:** cerca i baixa llibres de domini públic de Viquitexts, Wikisource, Project Gutenberg o de qualsevol catàleg OPDS (per exemple, un servidor de Calibre).
+
+**Lectura**
+- Temes Nit, Sèpia, Dia i Gris; mida de lletra, interlineat, marges i text justificat. També **fonts pròpies** (.ttf/.otf).
+- Passes pàgina tocant els costats; el centre mostra els controls.
+- **Lectura en veu alta**, també en segon pla i amb la pantalla bloquejada (Android).
+- **Cites** amb 6 colors, **notes** i **marcadors**. La secció «Cites i notes» les recull de tots els llibres.
+- **Diccionari** (Viquidiccionari / Wiktionary). La secció «Diccionari» recull totes les paraules buscades.
+- **Miniatures de les pàgines** als PDF i còmics.
+
+**Còpia i sincronització:** desa el progrés, les cites, les col·leccions i el diccionari en una carpeta que el núvol ja sincronitzi (Google Drive per a ordinador, Dropbox, OneDrive…). Es combinen les dades de tots els dispositius.
+
+## Encara no
+- Formats CBR, DJVU, DOC antic i CHM.
+- Sincronització directa amb el compte de Google Drive: cal registrar l'app a Google.
+- A l'iPhone: EPUB, PDF, veu i fonts pròpies (cal un Mac per compilar-ho i provar-ho).
 
 ## Compilar
 Cal el JDK 17 i, per a Android, l'SDK d'Android.
@@ -34,6 +50,11 @@ A la pàgina de [Releases](https://github.com/Xorigu3r/xoriguer-lectura/releases
 
 ## Llicència
 [GPL-3.0](LICENSE). El nom Xoriguer i el logo del falcó són de Xoriguer.
+
+## Fonts de llibres i dades
+- [Viquitexts / Wikisource](https://ca.wikisource.org) i [ws-export](https://ws-export.wmcloud.org): textos de domini públic.
+- [Project Gutenberg](https://www.gutenberg.org): llibres de domini públic.
+- [Viquidiccionari / Wiktionary](https://ca.wiktionary.org): definicions (CC BY-SA).
 
 ## Llibreries
 - [Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform) (Apache-2.0)

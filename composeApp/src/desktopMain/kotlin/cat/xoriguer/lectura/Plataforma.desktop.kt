@@ -11,7 +11,11 @@ import org.apache.pdfbox.Loader
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.rendering.ImageType
 import org.apache.pdfbox.rendering.PDFRenderer
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.platform.Font
+import java.awt.Desktop
 import java.io.File
+import java.net.URI
 import java.util.zip.ZipFile
 import javax.swing.JFileChooser
 import javax.swing.SwingUtilities
@@ -60,6 +64,20 @@ actual object Plataforma {
         }
         r
     }
+
+    private val documents get() = File(System.getProperty("user.home"), "Documents").takeIf { it.isDirectory } ?: File(System.getProperty("user.home"))
+
+    actual suspend fun descarrega(url: String): ByteArray = Jvm.descarrega(url)
+    actual fun carpetaBaixades(): String = File(documents, "Lectura Xoriguer").apply { mkdirs() }.absolutePath
+    actual fun carpetaFonts(): String = File(carpetaBaixades(), "Fonts").apply { mkdirs() }.absolutePath
+    actual fun escriu(cami: String, bytes: ByteArray) = Jvm.escriu(cami, bytes)
+    actual fun creaCarpeta(cami: String) = Jvm.creaCarpeta(cami)
+    actual fun reanomena(cami: String, nouNom: String): String? = Jvm.reanomena(cami, nouNom)
+    actual fun mou(cami: String, carpeta: String): String? = Jvm.mou(cami, carpeta)
+    actual fun esborra(cami: String): Boolean = Jvm.esborra(cami)
+    actual fun font(cami: String): FontFamily? = runCatching { FontFamily(Font(File(cami))) }.getOrNull()
+    actual val veu: Veu = VeuWindows
+    actual fun obreWeb(url: String) { runCatching { Desktop.getDesktop().browse(URI(url)) } }
 }
 
 @Composable

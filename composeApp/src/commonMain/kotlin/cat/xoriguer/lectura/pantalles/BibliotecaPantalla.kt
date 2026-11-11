@@ -1,8 +1,9 @@
 package cat.xoriguer.lectura.pantalles
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,12 +16,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -28,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cat.xoriguer.lectura.Plataforma
+import cat.xoriguer.lectura.Seccio
 import cat.xoriguer.lectura.dades.Biblioteca
 import cat.xoriguer.lectura.dades.Format
 import cat.xoriguer.lectura.dades.Llibre
@@ -37,82 +41,125 @@ import cat.xoriguer.lectura.tema.Xoriguer
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 
-private enum class Ordre(val nom: String) { RECENTS("Llegits fa poc"), TITOL("Títol"), AUTOR("Autor"), AFEGITS("Data del fitxer") }
-private enum class Vista { QUADRICULA, LLISTA }
+private enum class Ordre(val nom: String) { RECENTS("Llegits fa poc"), TITOL("Títol"), AUTOR("Autor"), AFEGITS("Data del fitxer"), MIDA("Mida") }
+
+/** Les quatre vistes de la biblioteca. */
+private enum class Vista(val nom: String, val icona: ImageVector) {
+    QUADRICULA("Quadrícula", Icons.Default.GridView),
+    MINIATURES("Miniatures", Icons.Default.Apps),
+    COMPLETA("Completa", Icons.AutoMirrored.Filled.ViewList),
+    BREU("Breu", Icons.Default.ViewHeadline),
+}
+
+private enum class Grup(val nom: String) { CAP("Sense agrupar"), AUTOR("Per autor"), SERIE("Per sèrie"), FORMAT("Per format"), CARPETA("Per carpeta"), COLLECCIO("Per col·lecció") }
+
+/** Preferències de la biblioteca (es recorden entre sessions). */
+private data class PrefsBiblio(val vista: Vista = Vista.QUADRICULA, val ordre: Ordre = Ordre.RECENTS, val grup: Grup = Grup.CAP) {
+    fun desa() = Plataforma.desaDada("biblioteca.txt", "${vista.name}\n${ordre.name}\n${grup.name}")
+    companion object {
+        fun carrega(): PrefsBiblio = runCatching {
+            val l = Plataforma.llegeixDada("biblioteca.txt")!!.lines()
+            PrefsBiblio(Vista.valueOf(l[0]), Ordre.valueOf(l[1]), Grup.valueOf(l[2]))
+        }.getOrElse { PrefsBiblio() }
+    }
+}
 
 @Composable
-fun BibliotecaPantalla(bib: Biblioteca, obreCites: () -> Unit, obre: (Llibre) -> Unit) {
+fun BibliotecaPantalla(bib: Biblioteca, ves: (Seccio) -> Unit, obre: (Llibre) -> Unit) {
     val scope = rememberCoroutineScope()
     var cerca by remember { mutableStateOf("") }
     var cercant by remember { mutableStateOf(false) }
     var filtre by remember { mutableStateOf<Format?>(null) }
+    var colleccio by remember { mutableStateOf<String?>(null) }
     var nomesLlegint by remember { mutableStateOf(false) }
-    var ordre by remember { mutableStateOf(Ordre.RECENTS) }
-    var vista by remember { mutableStateOf(Vista.QUADRICULA) }
+    var prefs by remember { mutableStateOf(PrefsBiblio.carrega()) }
+    fun canvia(p: PrefsBiblio) { prefs = p; p.desa() }
     var menuOrdre by remember { mutableStateOf(false) }
+    var menuVista by remember { mutableStateOf(false) }
+    var menuGrup by remember { mutableStateOf(false) }
     var carpetesObert by remember { mutableStateOf(false) }
+    var sincroObert by remember { mutableStateOf(false) }
+    var fitxa by remember { mutableStateOf<Llibre?>(null) }
 
-    val llista = remember(bib.llibres, cerca, filtre, nomesLlegint, ordre, bib.progres.toMap()) {
+    val progres = bib.progres.toMap()
+    val llista = remember(bib.llibres, cerca, filtre, colleccio, nomesLlegint, prefs.ordre, progres, bib.colleccions) {
         val q = cerca.trim().lowercase()
+        val enColleccio = colleccio?.let { bib.colleccions[it].orEmpty() }
         bib.llibres.asSequence()
             .filter { filtre == null || it.format == filtre }
-            .filter { !nomesLlegint || (bib.progres[it.cami]?.percent ?: 0f) in 0.001f..0.98f }
-            .filter { q.isEmpty() || it.titol.lowercase().contains(q) || (it.autor?.lowercase()?.contains(q) == true) || it.nomFitxer.lowercase().contains(q) }
+            .filter { enColleccio == null || it.cami in enColleccio }
+            .filter { !nomesLlegint || (progres[it.cami]?.percent ?: 0f) in 0.001f..0.98f }
+            .filter { q.isEmpty() || it.titol.lowercase().contains(q) || (it.autor?.lowercase()?.contains(q) == true) || it.nomFitxer.lowercase().contains(q) || it.serie?.lowercase()?.contains(q) == true }
             .let { s ->
-                when (ordre) {
-                    Ordre.RECENTS -> s.sortedWith(compareByDescending<Llibre> { bib.progres[it.cami]?.darreraLectura ?: 0L }.thenByDescending { it.modificat })
+                when (prefs.ordre) {
+                    Ordre.RECENTS -> s.sortedWith(compareByDescending<Llibre> { progres[it.cami]?.darreraLectura ?: 0L }.thenByDescending { it.modificat })
                     Ordre.TITOL -> s.sortedBy { it.titol.lowercase() }
-                    Ordre.AUTOR -> s.sortedBy { (it.autor ?: "￿").lowercase() }
+                    Ordre.AUTOR -> s.sortedBy { (it.autor ?: "\uFFFF").lowercase() }
                     Ordre.AFEGITS -> s.sortedByDescending { it.modificat }
+                    Ordre.MIDA -> s.sortedByDescending { it.mida }
                 }
             }.toList()
     }
-    val llegint = remember(bib.llibres, bib.progres.toMap()) {
-        bib.llibres.filter { (bib.progres[it.cami]?.percent ?: 0f) in 0.001f..0.98f }
-            .sortedByDescending { bib.progres[it.cami]?.darreraLectura ?: 0L }.take(10)
+    // Agrupació: llista de (títol del grup, llibres)
+    val grups: List<Pair<String?, List<Llibre>>> = remember(llista, prefs.grup, bib.colleccions) {
+        when (prefs.grup) {
+            Grup.CAP -> listOf(null to llista)
+            Grup.AUTOR -> llista.groupBy { it.autor ?: "Autor desconegut" }.toSortedMap(compareBy { it.lowercase() }).toList()
+            Grup.SERIE -> llista.groupBy { it.serie ?: "Sense sèrie" }.toSortedMap(compareBy { if (it == "Sense sèrie") "\uFFFF" else it.lowercase() }).toList()
+            Grup.FORMAT -> llista.groupBy { it.format.etiqueta }.toList()
+            Grup.CARPETA -> llista.groupBy { it.cami.substringBeforeLast('/').substringBeforeLast('\\').substringAfterLast('/').substringAfterLast('\\') }.toSortedMap(compareBy { it.lowercase() }).toList()
+            Grup.COLLECCIO -> bib.colleccions.map { (n, c) -> n to llista.filter { it.cami in c } }.filter { it.second.isNotEmpty() } +
+                listOf("Sense col·lecció" to llista.filter { l -> bib.colleccions.values.none { l.cami in it } }).filter { it.second.isNotEmpty() }
+        }
+    }
+    val llegint = remember(bib.llibres, progres) {
+        bib.llibres.filter { (progres[it.cami]?.percent ?: 0f) in 0.001f..0.98f }
+            .sortedByDescending { progres[it.cami]?.darreraLectura ?: 0L }.take(10)
     }
 
     Column(Modifier.fillMaxSize().background(Xoriguer.Fons)) {
-        // Al mòbil no hi caben els 6 botons: es queden Cerca i Cites, i la resta va al menú ⋮
+        // Al mòbil no hi caben tots els botons: es queden Cerca i Cites, i la resta va al menú ⋮
         BoxWithConstraints {
             val estret = maxWidth < 600.dp
             var menu by remember { mutableStateOf(false) }
             Capcalera {
                 IconButton({ cercant = !cercant; if (!cercant) cerca = "" }) { Icon(Icons.Default.Search, "Cerca", tint = Xoriguer.Crema) }
-                IconButton(obreCites) {
+                IconButton({ ves(Seccio.CITES) }) {
                     val n = bib.anotacions.totes.size
                     BadgedBox({ if (n > 0) Badge(containerColor = Xoriguer.Taronja, contentColor = Xoriguer.Fons) { Text("$n") } }) {
                         Icon(Icons.Default.FormatQuote, "Cites i notes", tint = Xoriguer.Crema)
                     }
                 }
                 if (!estret) {
-                    IconButton({ vista = if (vista == Vista.QUADRICULA) Vista.LLISTA else Vista.QUADRICULA }) {
-                        Icon(if (vista == Vista.QUADRICULA) Icons.Default.ViewList else Icons.Default.GridView, "Vista", tint = Xoriguer.Crema)
-                    }
+                    IconButton({ ves(Seccio.GRATUITS) }) { Icon(Icons.Default.CloudDownload, "Llibres gratuïts", tint = Xoriguer.Crema) }
+                    IconButton({ menuVista = true }) { Icon(prefs.vista.icona, "Vista", tint = Xoriguer.Crema) }
                     IconButton({ menuOrdre = true }) { Icon(Icons.Default.Sort, "Ordena", tint = Xoriguer.Crema) }
-                    IconButton({ carpetesObert = true }) { Icon(Icons.Default.Folder, "Carpetes", tint = Xoriguer.Crema) }
                     IconButton({ scope.launch { bib.escaneja() } }, enabled = !bib.escanejant) { Icon(Icons.Default.Refresh, "Torna a cercar", tint = Xoriguer.Crema) }
                 }
                 Box {
-                    if (estret) IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, "Més opcions", tint = Xoriguer.Crema) }
+                    IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, "Més opcions", tint = Xoriguer.Crema) }
                     DropdownMenu(menu, { menu = false }, containerColor = Xoriguer.Ui) {
-                        val llista = vista == Vista.QUADRICULA
-                        DropdownMenuItem(
-                            { Text(if (llista) "Vista de llista" else "Vista de quadrícula") },
-                            { vista = if (llista) Vista.LLISTA else Vista.QUADRICULA; menu = false },
-                            leadingIcon = { Icon(if (llista) Icons.Default.ViewList else Icons.Default.GridView, null) },
-                        )
-                        DropdownMenuItem({ Text("Ordena: ${ordre.nom.lowercase()}") }, { menu = false; menuOrdre = true }, leadingIcon = { Icon(Icons.Default.Sort, null) })
-                        DropdownMenuItem({ Text("Carpetes") }, { menu = false; carpetesObert = true }, leadingIcon = { Icon(Icons.Default.Folder, null) })
-                        DropdownMenuItem(
-                            { Text("Torna a cercar llibres") }, { menu = false; scope.launch { bib.escaneja() } },
-                            enabled = !bib.escanejant, leadingIcon = { Icon(Icons.Default.Refresh, null) },
-                        )
+                        @Composable fun Op(t: String, i: ImageVector, f: () -> Unit) = DropdownMenuItem({ Text(t) }, { menu = false; f() }, leadingIcon = { Icon(i, null) })
+                        if (estret) {
+                            Op("Llibres gratuïts", Icons.Default.CloudDownload) { ves(Seccio.GRATUITS) }
+                            Op("Vista: ${prefs.vista.nom.lowercase()}", prefs.vista.icona) { menuVista = true }
+                            Op("Ordena: ${prefs.ordre.nom.lowercase()}", Icons.Default.Sort) { menuOrdre = true }
+                        }
+                        Op(prefs.grup.nom, Icons.Default.Workspaces) { menuGrup = true }
+                        Op("Diccionari", Icons.Default.Translate) { ves(Seccio.DICCIONARI) }
+                        Op("Llibres duplicats", Icons.Default.ContentCopy) { ves(Seccio.DUPLICATS) }
+                        Op("Carpetes", Icons.Default.Folder) { carpetesObert = true }
+                        Op("Còpia i sincronització", Icons.Default.Sync) { sincroObert = true }
+                        if (estret) Op("Torna a cercar llibres", Icons.Default.Refresh) { scope.launch { bib.escaneja() } }
                     }
                     DropdownMenu(menuOrdre, { menuOrdre = false }, containerColor = Xoriguer.Ui) {
-                        Ordre.entries.forEach { o ->
-                            DropdownMenuItem({ Text(o.nom, color = if (o == ordre) Xoriguer.Taronja else Xoriguer.Txt) }, { ordre = o; menuOrdre = false })
-                        }
+                        Ordre.entries.forEach { o -> DropdownMenuItem({ Text(o.nom, color = if (o == prefs.ordre) Xoriguer.Taronja else Xoriguer.Txt) }, { canvia(prefs.copy(ordre = o)); menuOrdre = false }) }
+                    }
+                    DropdownMenu(menuVista, { menuVista = false }, containerColor = Xoriguer.Ui) {
+                        Vista.entries.forEach { v -> DropdownMenuItem({ Text(v.nom, color = if (v == prefs.vista) Xoriguer.Taronja else Xoriguer.Txt) }, { canvia(prefs.copy(vista = v)); menuVista = false }, leadingIcon = { Icon(v.icona, null) }) }
+                    }
+                    DropdownMenu(menuGrup, { menuGrup = false }, containerColor = Xoriguer.Ui) {
+                        Grup.entries.forEach { g -> DropdownMenuItem({ Text(g.nom, color = if (g == prefs.grup) Xoriguer.Taronja else Xoriguer.Txt) }, { canvia(prefs.copy(grup = g)); menuGrup = false }) }
                     }
                 }
             }
@@ -122,17 +169,18 @@ fun BibliotecaPantalla(bib: Biblioteca, obreCites: () -> Unit, obre: (Llibre) ->
         if (cercant) {
             OutlinedTextField(
                 cerca, { cerca = it }, Modifier.fillMaxWidth().padding(12.dp, 8.dp),
-                placeholder = { Text("Títol o autor") }, singleLine = true,
+                placeholder = { Text("Títol, autor o sèrie") }, singleLine = true,
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Xoriguer.Taronja, cursorColor = Xoriguer.Taronja),
             )
         }
 
-        // Filtres
+        // Filtres: tots, llegint, formats i col·leccions
         val formats = remember(bib.llibres) { bib.llibres.map { it.format }.distinct().sortedBy { it.ordinal } }
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Xip("Tots (${bib.llibres.size})", filtre == null && !nomesLlegint) { filtre = null; nomesLlegint = false }
+            Xip("Tots (${bib.llibres.size})", filtre == null && !nomesLlegint && colleccio == null) { filtre = null; nomesLlegint = false; colleccio = null }
             Xip("Llegint", nomesLlegint) { nomesLlegint = !nomesLlegint }
+            bib.colleccions.keys.forEach { c -> Xip("📚 $c", colleccio == c) { colleccio = if (colleccio == c) null else c } }
             formats.forEach { f -> Xip(f.etiqueta, filtre == f) { filtre = if (filtre == f) null else f } }
         }
 
@@ -142,33 +190,52 @@ fun BibliotecaPantalla(bib: Biblioteca, obreCites: () -> Unit, obre: (Llibre) ->
         }
         if (bib.llibres.isEmpty()) {
             if (bib.escanejant) Buit("Cercant llibres…") else
-                Buit("No s'ha trobat cap llibre a les carpetes.\nAfegeix-ne una amb els llibres (EPUB, PDF, FB2, TXT…).", "Carpetes") { carpetesObert = true }
+                Buit("No s'ha trobat cap llibre a les carpetes.\nAfegeix-ne una, o baixa'n de gratuïts.", "Llibres gratuïts") { ves(Seccio.GRATUITS) }
             return@Column
         }
 
-        val mostraLlegint = llegint.isNotEmpty() && cerca.isBlank() && filtre == null && !nomesLlegint
-        when (vista) {
-            Vista.QUADRICULA -> LazyVerticalGrid(
-                GridCells.Adaptive(118.dp), Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                if (mostraLlegint) {
-                    item(span = { GridItemSpan(maxLineSpan) }) { Continua(llegint, bib, obre) }
-                    item(span = { GridItemSpan(maxLineSpan) }) { Seccio("Biblioteca") }
+        val mostraLlegint = llegint.isNotEmpty() && cerca.isBlank() && filtre == null && !nomesLlegint && colleccio == null
+        val premut: (Llibre) -> Unit = { fitxa = it }
+        when (prefs.vista) {
+            Vista.QUADRICULA, Vista.MINIATURES -> {
+                val mini = prefs.vista == Vista.MINIATURES
+                LazyVerticalGrid(
+                    GridCells.Adaptive(if (mini) 78.dp else 118.dp), Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(if (mini) 8.dp else 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (mini) 8.dp else 16.dp),
+                ) {
+                    if (mostraLlegint) {
+                        item(span = { GridItemSpan(maxLineSpan) }) { Continua(llegint, bib, obre, premut) }
+                        item(span = { GridItemSpan(maxLineSpan) }) { Seccio("Biblioteca") }
+                    }
+                    grups.forEach { (titol, ll) ->
+                        if (titol != null) item(span = { GridItemSpan(maxLineSpan) }, key = "g$titol") { Seccio("$titol · ${ll.size}") }
+                        items(ll, key = { (titol ?: "") + it.cami }) { l ->
+                            if (mini) Box(Modifier.combinedClickable(onLongClick = { premut(l) }) { obre(l) }) { Portada(l, Modifier.fillMaxWidth()) }
+                            else CasellaLlibre(l, progres[l.cami]?.percent, obre, premut)
+                        }
+                    }
                 }
-                items(llista, key = { it.cami }) { l -> CasellaLlibre(l, bib.progres[l.cami]?.percent, obre) }
             }
-            Vista.LLISTA -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Vista.COMPLETA, Vista.BREU -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(if (prefs.vista == Vista.BREU) 2.dp else 10.dp)) {
                 if (mostraLlegint) {
-                    item { Continua(llegint, bib, obre) }
+                    item { Continua(llegint, bib, obre, premut) }
                     item { Seccio("Biblioteca") }
                 }
-                items(llista, key = { it.cami }) { l -> FilaLlibre(l, bib.progres[l.cami]?.percent, obre) }
+                grups.forEach { (titol, ll) ->
+                    if (titol != null) item(key = "g$titol") { Seccio("$titol · ${ll.size}") }
+                    items(ll, key = { (titol ?: "") + it.cami }) { l ->
+                        if (prefs.vista == Vista.BREU) FilaBreu(l, progres[l.cami]?.percent, obre, premut)
+                        else FilaLlibre(l, progres[l.cami]?.percent, obre, premut)
+                    }
+                }
             }
         }
     }
 
-    if (carpetesObert) DialegCarpetes(bib, { carpetesObert = false; scope.launch { bib.escaneja() } })
+    if (carpetesObert) DialegCarpetes(bib) { carpetesObert = false; scope.launch { bib.escaneja() } }
+    if (sincroObert) DialegSincronitzacio(bib) { sincroObert = false }
+    fitxa?.let { l -> FitxaLlibre(l, bib, { fitxa = null; obre(it) }) { fitxa = null } }
 }
 
 @Composable
@@ -185,25 +252,28 @@ private fun Xip(text: String, actiu: Boolean, onClick: () -> Unit) = FilterChip(
 private fun Seccio(t: String) = Text(t.uppercase(), color = Xoriguer.Taronja, fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 2.sp, modifier = Modifier.padding(top = 4.dp))
 
 @Composable
-private fun Continua(llibres: List<Llibre>, bib: Biblioteca, obre: (Llibre) -> Unit) = Column {
+private fun Continua(llibres: List<Llibre>, bib: Biblioteca, obre: (Llibre) -> Unit, premut: (Llibre) -> Unit) = Column {
     Seccio("Continua llegint")
     Spacer(Modifier.height(8.dp))
     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(llibres, key = { "c" + it.cami }) { l -> Box(Modifier.width(100.dp)) { CasellaLlibre(l, bib.progres[l.cami]?.percent, obre) } }
+        items(llibres, key = { "c" + it.cami }) { l -> Box(Modifier.width(100.dp)) { CasellaLlibre(l, bib.progres[l.cami]?.percent, obre, premut) } }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CasellaLlibre(l: Llibre, percent: Float?, obre: (Llibre) -> Unit) = Column(Modifier.clickable { obre(l) }) {
-    Portada(l, Modifier.fillMaxWidth())
-    BarraProgres(percent)
-    Text(l.titol, color = Xoriguer.Txt, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
-    l.autor?.let { Text(it, color = Xoriguer.Mut, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-}
+private fun CasellaLlibre(l: Llibre, percent: Float?, obre: (Llibre) -> Unit, premut: (Llibre) -> Unit) =
+    Column(Modifier.combinedClickable(onLongClick = { premut(l) }) { obre(l) }) {
+        Portada(l, Modifier.fillMaxWidth())
+        BarraProgres(percent)
+        Text(l.titol, color = Xoriguer.Txt, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
+        l.autor?.let { Text(it, color = Xoriguer.Mut, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FilaLlibre(l: Llibre, percent: Float?, obre: (Llibre) -> Unit) = Row(
-    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Xoriguer.Ui).clickable { obre(l) }.padding(8.dp),
+private fun FilaLlibre(l: Llibre, percent: Float?, obre: (Llibre) -> Unit, premut: (Llibre) -> Unit) = Row(
+    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Xoriguer.Ui).combinedClickable(onLongClick = { premut(l) }) { obre(l) }.padding(8.dp),
     verticalAlignment = Alignment.CenterVertically,
 ) {
     Portada(l, Modifier.width(54.dp))
@@ -214,6 +284,19 @@ private fun FilaLlibre(l: Llibre, percent: Float?, obre: (Llibre) -> Unit) = Row
         Text("${l.format.etiqueta} · ${mida(l.mida)}" + (percent?.let { " · ${(it * 100).toInt()} %" } ?: ""), color = Xoriguer.Mut, fontSize = 11.sp)
         BarraProgres(percent)
     }
+    IconButton({ premut(l) }) { Icon(Icons.Default.MoreVert, "Opcions", tint = Xoriguer.Mut) }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FilaBreu(l: Llibre, percent: Float?, obre: (Llibre) -> Unit, premut: (Llibre) -> Unit) = Row(
+    Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).combinedClickable(onLongClick = { premut(l) }) { obre(l) }.padding(horizontal = 6.dp, vertical = 8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+) {
+    Text(l.format.etiqueta, color = Xoriguer.Taronja, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
+    Text(l.titol, color = Xoriguer.Txt, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+    l.autor?.let { Text(it, color = Xoriguer.Mut, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp).widthIn(max = 160.dp)) }
+    percent?.let { Text("${(it * 100).toInt()} %", color = Xoriguer.Mut, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp)) }
 }
 
 @Composable
@@ -223,7 +306,7 @@ private fun BarraProgres(percent: Float?) {
     }
 }
 
-private fun mida(b: Long): String = when {
+fun mida(b: Long): String = when {
     b >= 1_000_000 -> "${(b / 100_000) / 10.0} MB"
     b >= 1_000 -> "${b / 1_000} KB"
     else -> "$b B"
@@ -260,6 +343,7 @@ private fun DialegCarpetes(bib: Biblioteca, tanca: () -> Unit) {
                         IconButton({ bib.treuCarpeta(c) }) { Icon(Icons.Default.Close, "Treu", tint = Xoriguer.Mut) }
                     }
                 }
+                Text("També es miren sempre els llibres baixats: ${Plataforma.carpetaBaixades()}", color = Xoriguer.Mut, fontSize = 11.sp)
             }
         },
         confirmButton = { TextButton(tanca) { Text("Fet", color = Xoriguer.Taronja) } },

@@ -1,6 +1,7 @@
 package cat.xoriguer.lectura.formats
 
 import cat.xoriguer.lectura.ArxiuZip
+import cat.xoriguer.lectura.DocumentPdf
 import cat.xoriguer.lectura.Plataforma
 import cat.xoriguer.lectura.dades.Bloc
 import cat.xoriguer.lectura.dades.Capitol
@@ -16,19 +17,43 @@ object Llegidors {
 
     fun metadades(cami: String, format: Format): Metadades? = runCatching { metadadesOError(cami, format) }.getOrNull()
 
+    private fun <T> ambZip(cami: String, f: (ArxiuZip) -> T): T? = Plataforma.obreZip(cami)?.let { z -> try { f(z) } finally { z.tanca() } }
+
     fun metadadesOError(cami: String, format: Format): Metadades? =
         when (format) {
-            Format.EPUB -> Plataforma.obreZip(cami)?.let { z -> try { Epub(z).metadades() } finally { z.tanca() } }
+            Format.EPUB -> ambZip(cami) { Epub(it).metadades() }
             Format.FB2 -> Fb2.metadades(Text.decodifica(Plataforma.llegeix(cami)))
+            Format.MOBI -> Mobi(Plataforma.llegeix(cami)).metadades()
+            Format.DOCX -> ambZip(cami, Oficina::docxMetadades)
+            Format.ODT -> ambZip(cami, Oficina::odtMetadades)
+            Format.CBZ -> ambZip(cami) { Metadades(null, null, null, Comic(it).portada()) }
             else -> null
         }
 
     fun contingut(cami: String, format: Format): Contingut = when (format) {
-        Format.EPUB -> Plataforma.obreZip(cami)?.let { z -> try { Epub(z).contingut() } finally { z.tanca() } }
-            ?: error("No s'ha pogut obrir l'EPUB")
+        Format.EPUB -> ambZip(cami) { Epub(it).contingut() } ?: error("No s'ha pogut obrir l'EPUB")
         Format.FB2 -> Fb2.contingut(Text.decodifica(Plataforma.llegeix(cami)))
         Format.TXT -> Text.deTextPla(Text.decodifica(Plataforma.llegeix(cami)))
-        else -> error("Format encara no suportat: ${format.etiqueta}")
+        Format.MOBI -> Mobi(Plataforma.llegeix(cami)).contingut()
+        Format.DOCX -> ambZip(cami, Oficina::docx) ?: error("No s'ha pogut obrir el document")
+        Format.ODT -> ambZip(cami, Oficina::odt) ?: error("No s'ha pogut obrir el document")
+        Format.RTF -> Oficina.rtf(Text.decodifica(Plataforma.llegeix(cami)))
+        else -> error(missatgeNoSuportat(format))
+    }
+
+    fun missatgeNoSuportat(format: Format): String = when (format) {
+        Format.CBR -> "Els còmics CBR (comprimits amb RAR) encara no es poden obrir. Si el converteixes a CBZ, sí."
+        Format.DJVU -> "Els fitxers DJVU encara no es poden obrir."
+        Format.DOC -> "Els documents .doc antics encara no es poden obrir. Desa'l com a .docx des del Word o el LibreOffice."
+        Format.CHM -> "Els fitxers d'ajuda CHM encara no es poden obrir."
+        else -> "Format encara no suportat: ${format.etiqueta}"
+    }
+
+    /** Documents que es mostren pàgina a pàgina (PDF i còmics). */
+    fun paginat(cami: String, format: Format): DocumentPdf? = when (format) {
+        Format.PDF -> Plataforma.obrePdf(cami)
+        Format.CBZ -> Plataforma.obreZip(cami)?.let { Comic(it) }?.takeIf { it.pagines > 0 }
+        else -> null
     }
 }
 

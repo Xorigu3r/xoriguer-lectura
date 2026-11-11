@@ -1,14 +1,19 @@
 package cat.xoriguer.lectura.dades
 
-enum class Format(val extensions: List<String>, val etiqueta: String, val suportat: Boolean) {
+/** `paginat`: es mostra pàgina a pàgina com a imatge (PDF, còmics); la resta, com a text que es pot ajustar. */
+enum class Format(val extensions: List<String>, val etiqueta: String, val suportat: Boolean, val paginat: Boolean = false) {
     EPUB(listOf("epub"), "EPUB", true),
-    PDF(listOf("pdf"), "PDF", true),
+    PDF(listOf("pdf"), "PDF", true, paginat = true),
+    MOBI(listOf("mobi", "azw", "azw3", "prc"), "Kindle", true),
     FB2(listOf("fb2"), "FB2", true),
+    DOCX(listOf("docx"), "Word", true),
+    ODT(listOf("odt"), "ODT", true),
+    RTF(listOf("rtf"), "RTF", true),
     TXT(listOf("txt"), "TXT", true),
-    MOBI(listOf("mobi", "azw", "azw3"), "Kindle", false),
-    CBZ(listOf("cbz", "cbr"), "Còmic", false),
-    DJVU(listOf("djvu", "djv"), "DJVU", false),
-    WORD(listOf("doc", "docx", "rtf", "odt"), "Word", false),
+    CBZ(listOf("cbz"), "Còmic", true, paginat = true),
+    CBR(listOf("cbr"), "CBR", false, paginat = true),
+    DJVU(listOf("djvu", "djv"), "DJVU", false, paginat = true),
+    DOC(listOf("doc"), "DOC", false),
     CHM(listOf("chm"), "CHM", false);
 
     companion object {

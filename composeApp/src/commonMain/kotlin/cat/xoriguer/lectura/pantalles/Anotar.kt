@@ -110,6 +110,8 @@ fun PanellCita(
     desa: (inici: Int, fi: Int, color: ColorCita, nota: String) -> Unit,
     actualitza: (Anotacio) -> Unit,
     esborra: (Anotacio) -> Unit,
+    buscaParaula: ((String) -> Unit)? = null,
+    llegeixDesDaqui: (() -> Unit)? = null,
     tanca: () -> Unit,
 ) {
     val porta = LocalClipboardManager.current
@@ -147,7 +149,15 @@ fun PanellCita(
                 IconButton({ val (a, b) = rang(); porta.setText(AnnotatedString(text.substring(a, b))); tanca() }) {
                     Icon(Icons.Default.ContentCopy, "Copia", tint = Xoriguer.Crema)
                 }
+                // Diccionari: només si s'ha seleccionat una paraula (o una expressió curta)
+                val (a0, b0) = rang()
+                val tros = text.substring(a0, b0).trim()
+                if (buscaParaula != null && !valor.selection.collapsed && tros.isNotEmpty() && tros.split(Regex("\\s+")).size <= 3)
+                    IconButton({ buscaParaula(tros); tanca() }) { Icon(Icons.Default.Translate, "Diccionari", tint = Xoriguer.Crema) }
+                if (llegeixDesDaqui != null) IconButton({ llegeixDesDaqui(); tanca() }) { Icon(Icons.Default.Headphones, "Llegeix en veu alta des d'aquí", tint = Xoriguer.Crema) }
             }
+            if (buscaParaula != null && valor.selection.collapsed)
+                Text("Per buscar una paraula al diccionari, selecciona-la.", color = Xoriguer.Mut, fontSize = 11.sp)
 
             if (existents.isNotEmpty()) {
                 HorizontalDivider(color = Xoriguer.Ui3)

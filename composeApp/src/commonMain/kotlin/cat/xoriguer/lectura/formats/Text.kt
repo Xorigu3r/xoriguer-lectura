@@ -28,7 +28,7 @@ object Text {
     }
 
     private val CP1252 = "€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008DŽ\u008F\u0090‘’“”•–—˜™š›œ\u009DžŸ"
-    private fun cp1252(v: Int): Char = if (v in 0x80..0x9F) CP1252[v - 0x80] else v.toChar()
+    fun cp1252(v: Int): Char = if (v in 0x80..0x9F) CP1252[v - 0x80] else v.toChar()
 
     /** Text pla: paràgrafs separats per línies buides (o per cada línia si no n'hi ha). */
     fun deTextPla(s: String): Contingut {

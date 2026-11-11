@@ -14,5 +14,5 @@ fun main(args: Array<String>) = application {
         title = "Lectura · Xoriguer",
         icon = painterResource(Res.drawable.icona),
         state = rememberWindowState(width = 1100.dp, height = 800.dp),
-    ) { App(args.firstOrNull { !it.startsWith("--") }, obreCites = "--cites" in args) }
+    ) { App(args.firstOrNull { !it.startsWith("--") }, args.firstNotNullOfOrNull { a -> Seccio.entries.firstOrNull { "--${it.name.lowercase()}" == a } } ?: Seccio.BIBLIOTECA) }
 }

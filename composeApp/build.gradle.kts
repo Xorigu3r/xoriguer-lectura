@@ -30,6 +30,9 @@ kotlin {
             implementation(compose.components.resources)
             implementation(libs.coroutines.core)
         }
+        // Codi compartit per Android i Windows (baixades, fitxers): totes dues són JVM
+        val jvmComu by creating { dependsOn(commonMain.get()) }
+        androidMain.get().dependsOn(jvmComu)
         androidMain.dependencies {
             implementation(libs.activity.compose)
         }
@@ -37,6 +40,7 @@ kotlin {
             dependencies { implementation(kotlin("test")) }
         }
         val desktopMain by getting {
+            dependsOn(jvmComu)
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.coroutines.swing)
@@ -57,8 +61,8 @@ android {
         applicationId = "cat.xoriguer.lectura"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.2.0"
     }
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
@@ -79,7 +83,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "Lectura Xoriguer"
-            packageVersion = "0.1.1"
+            packageVersion = "0.2.0"
             description = "Lector de llibres electrònics"
             vendor = "Xoriguer"
             windows {

@@ -6,33 +6,38 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -52,46 +57,71 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Preferències de lectura (es desen a lector.txt). */
+/** Preferències de lectura (es desen a lector.txt). `font`: "serif", "sans" o el camí d'un fitxer .ttf/.otf. */
 data class Ajustos(
     val mida: Float = 19f,
     val interlineat: Float = 1.55f,
     val marge: Int = 20,
-    val serif: Boolean = true,
+    val font: String = "serif",
     val tema: TemaLectura = TemaLectura.NIT,
     val justificat: Boolean = true,
+    val passaPagina: Boolean = true,
+    val velocitatVeu: Float = 1f,
 ) {
-    fun desa() = Plataforma.desaDada("lector.txt", "$mida\n$interlineat\n$marge\n$serif\n${tema.name}\n$justificat")
+    fun desa() = Plataforma.desaDada("lector.txt", listOf(mida, interlineat, marge, font, tema.name, justificat, passaPagina, velocitatVeu).joinToString("\n"))
 
     companion object {
-        fun carrega(): Ajustos = runCatching {
-            val l = Plataforma.llegeixDada("lector.txt")!!.lines()
-            Ajustos(l[0].toFloat(), l[1].toFloat(), l[2].toInt(), l[3].toBoolean(), TemaLectura.valueOf(l[4]), l[5].toBoolean())
-        }.getOrElse { Ajustos() }
+        fun carrega(): Ajustos {
+            val l = Plataforma.llegeixDada("lector.txt")?.lines() ?: return Ajustos()
+            val d = Ajustos()
+            fun s(i: Int) = l.getOrNull(i)
+            // la 0.1 desava "true"/"false" (serif) on ara hi ha la font
+            val font = when (val f = s(3)) { null, "true" -> "serif"; "false" -> "sans"; else -> f }
+            return Ajustos(
+                s(0)?.toFloatOrNull() ?: d.mida, s(1)?.toFloatOrNull() ?: d.interlineat, s(2)?.toIntOrNull() ?: d.marge, font,
+                s(4)?.let { runCatching { TemaLectura.valueOf(it) }.getOrNull() } ?: d.tema, s(5)?.toBooleanStrictOrNull() ?: d.justificat,
+                s(6)?.toBooleanStrictOrNull() ?: d.passaPagina, s(7)?.toFloatOrNull() ?: d.velocitatVeu,
+            )
+        }
     }
 }
 
 private sealed interface Estat {
     data object Carregant : Estat
     data class Error(val missatge: String) : Estat
-    data class Text(val c: Contingut) : Estat
+    data class Text(val c: Contingut, val idioma: String) : Estat
     data class Pdf(val doc: DocumentPdf) : Estat
+}
+
+/** Tipus de lletra a partir de l'ajust (els fitxers de l'usuari es carreguen un sol cop). */
+private val fontsCarregades = mutableMapOf<String, FontFamily?>()
+fun familiaDe(font: String): FontFamily = when (font) {
+    "serif" -> FontFamily.Serif
+    "sans" -> FontFamily.SansSerif
+    "mono" -> FontFamily.Monospace
+    else -> fontsCarregades.getOrPut(font) { Plataforma.font(font) } ?: FontFamily.Serif
 }
 
 @Composable
 fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: () -> Unit) {
+    val scope = rememberCoroutineScope()
     var ajustos by remember { mutableStateOf(Ajustos.carrega()) }
     var controls by remember { mutableStateOf(false) }
     var panellAjustos by remember { mutableStateOf(false) }
     var panellIndex by remember { mutableStateOf(false) }
+    var miniatures by remember { mutableStateOf(false) }
     var seleccionat by remember { mutableStateOf<Int?>(null) }
+    var paraula by remember { mutableStateOf<String?>(null) }
     val inicial = remember { bib.progres[llibre.cami] }
 
     val estat by produceState<Estat>(Estat.Carregant, llibre.cami) {
         value = withContext(Dispatchers.Default) {
             runCatching {
-                if (llibre.format == Format.PDF) Plataforma.obrePdf(llibre.cami)?.let { Estat.Pdf(it) } ?: Estat.Error("No s'ha pogut obrir el PDF")
-                else Estat.Text(Llegidors.contingut(llibre.cami, llibre.format))
+                if (llibre.format.paginat) Llegidors.paginat(llibre.cami, llibre.format)?.let { Estat.Pdf(it) }
+                    ?: Estat.Error(if (llibre.format.suportat) "No s'ha pogut obrir el fitxer" else Llegidors.missatgeNoSuportat(llibre.format))
+                else Llegidors.contingut(llibre.cami, llibre.format).let { c ->
+                    Estat.Text(c, Idioma.detecta(c.blocs.take(200).joinToString(" ") { it.text }))
+                }
             }.getOrElse { Estat.Error(it.message ?: "Error en obrir el llibre") }
         }
     }
@@ -103,6 +133,19 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
     val citesPerBloc = remember(meves) { meves.filter { it.tipus == TipusAnotacio.CITA }.groupBy { it.bloc } }
     val marcadorAqui = meves.firstOrNull { it.tipus == TipusAnotacio.MARCADOR && it.bloc == llista.firstVisibleItemIndex }
     val total = when (val e = estat) { is Estat.Text -> e.c.blocs.size; is Estat.Pdf -> e.doc.pagines; else -> 0 }
+    val text = estat as? Estat.Text
+
+    // Lectura en veu alta
+    val veu = remember(text) { text?.let { LectorVeu(it.c.blocs, it.idioma, llibre.titol) } }
+    DisposableEffect(veu) { onDispose { veu?.atura() } }
+    LaunchedEffect(ajustos.velocitatVeu, veu) { veu?.velocitat = ajustos.velocitatVeu }
+    // segueix el paràgraf que es llegeix
+    LaunchedEffect(veu?.index, veu?.actiu) {
+        val v = veu ?: return@LaunchedEffect
+        if (!v.actiu) return@LaunchedEffect
+        val vis = llista.layoutInfo.visibleItemsInfo
+        if (vis.none { it.index == v.index } || vis.lastOrNull()?.index == v.index) llista.animateScrollToItem(v.index)
+    }
 
     // Desa el progrés quan es para de desplaçar
     LaunchedEffect(llista, total) {
@@ -113,13 +156,22 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
             .collect { (i, o) -> bib.desaProgres(llibre, i, o, percent(llista, total)) }
     }
 
+    // Tocar: costats = passar pàgina (si està activat), centre = mostrar/amagar els controls
+    fun toca(x: Float) {
+        if (controls || !ajustos.passaPagina || x in 0.3f..0.7f) { controls = !controls; return }
+        scope.launch {
+            val alt = llista.layoutInfo.viewportSize.height * .9f
+            llista.animateScrollBy(if (x > .5f) alt else -alt)
+        }
+    }
+
     val tema = ajustos.tema
     Box(Modifier.fillMaxSize().background(tema.fons)) {
         when (val e = estat) {
             Estat.Carregant -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = Xoriguer.Taronja)
             is Estat.Error -> Text(e.missatge, Modifier.align(Alignment.Center).padding(32.dp), color = tema.text, textAlign = TextAlign.Center)
-            is Estat.Text -> TextLlibre(e.c, llista, ajustos, citesPerBloc, { seleccionat = it }) { controls = !controls }
-            is Estat.Pdf -> PdfLlibre(e.doc, llista, tema) { controls = !controls }
+            is Estat.Text -> TextLlibre(e.c, llista, ajustos, citesPerBloc, veu?.takeIf { it.actiu }?.index, { seleccionat = it }, ::toca)
+            is Estat.Pdf -> PdfLlibre(e.doc, llista, tema, ::toca)
         }
 
         AnimatedVisibility(controls, Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
@@ -130,32 +182,41 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
                         Text(llibre.titol, color = Xoriguer.Crema, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         llibre.autor?.let { Text(it, color = Xoriguer.Mut, fontSize = 12.sp, maxLines = 1) }
                     }
+                    if (veu != null && Plataforma.veu.disponible) IconButton({
+                        controls = false
+                        if (veu.actiu) veu.pausa() else veu.comenca(llista.firstVisibleItemIndex)
+                    }) { Icon(Icons.Default.Headphones, "Llegeix en veu alta", tint = if (veu.actiu) Xoriguer.Taronja else Xoriguer.Crema) }
                     if (total > 0) IconButton({
                         if (marcadorAqui != null) bib.anotacions.esborra(marcadorAqui)
                         else {
                             val i = llista.firstVisibleItemIndex
-                            val t = (estat as? Estat.Text)?.c?.blocs?.getOrNull(i)?.text?.let { if (it.length > 90) it.take(90).trimEnd() + "…" else it } ?: "Pàgina ${i + 1}"
+                            val t = text?.c?.blocs?.getOrNull(i)?.text?.let { if (it.length > 90) it.take(90).trimEnd() + "…" else it } ?: "Pàgina ${i + 1}"
                             bib.anotacions.nova(llibre, TipusAnotacio.MARCADOR, i, 0, 0, t, percent = percent(llista, total))
                         }
                     }) {
                         Icon(if (marcadorAqui != null) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, "Marcador", tint = if (marcadorAqui != null) Xoriguer.Taronja else Xoriguer.Crema)
                     }
+                    if (estat is Estat.Pdf) IconButton({ miniatures = true }) { Icon(Icons.Default.GridView, "Miniatures de les pàgines", tint = Xoriguer.Crema) }
                     if (total > 0) IconButton({ panellIndex = true }) { Icon(Icons.AutoMirrored.Filled.List, "Índex, marcadors i cites", tint = Xoriguer.Crema) }
-                    if (estat is Estat.Text) IconButton({ panellAjustos = true }) { Icon(Icons.Default.TextFields, "Lletra", tint = Xoriguer.Crema) }
+                    if (text != null) IconButton({ panellAjustos = true }) { Icon(Icons.Default.TextFields, "Lletra", tint = Xoriguer.Crema) }
                 }
                 Box(Modifier.fillMaxWidth().height(2.dp).background(Xoriguer.Taronja))
             }
         }
 
-        AnimatedVisibility(controls && total > 0, Modifier.align(Alignment.BottomCenter), enter = fadeIn(), exit = fadeOut()) {
-            BarraPosicio(llista, total, llibre.format == Format.PDF)
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+            if (veu != null && (veu.actiu || controls)) ReproductorVeu(veu, ajustos) { ajustos = it; it.desa() }
+            AnimatedVisibility(controls && total > 0, enter = fadeIn(), exit = fadeOut()) {
+                BarraPosicio(llista, total, llibre.format.paginat)
+            }
         }
     }
 
     if (panellAjustos) PanellAjustos(ajustos, { ajustos = it; it.desa() }) { panellAjustos = false }
-    if (panellIndex) PanellIndex((estat as? Estat.Text)?.c?.capitols ?: emptyList(), meves, llista, bib.anotacions) { panellIndex = false }
+    if (panellIndex) PanellIndex(text?.c?.capitols ?: emptyList(), meves, llista, bib.anotacions) { panellIndex = false }
+    if (miniatures) (estat as? Estat.Pdf)?.let { e -> PanellMiniatures(e.doc, llista.firstVisibleItemIndex, { scope.launch { llista.scrollToItem(it) } }) { miniatures = false } }
     val sel = seleccionat
-    val blocSel = sel?.let { (estat as? Estat.Text)?.c?.blocs?.getOrNull(it) }
+    val blocSel = sel?.let { text?.c?.blocs?.getOrNull(it) }
     if (sel != null && blocSel != null) PanellCita(
         blocSel.text, meves.filter { it.bloc == sel },
         desa = { a, b, color, nota ->
@@ -163,7 +224,32 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
         },
         actualitza = bib.anotacions::actualitza,
         esborra = bib.anotacions::esborra,
+        buscaParaula = { paraula = it },
+        llegeixDesDaqui = if (veu != null && Plataforma.veu.disponible) ({ veu.comenca(sel) }) else null,
     ) { seleccionat = null }
+    paraula?.let { p -> DialegDiccionari(p, text?.idioma ?: "ca", llibre.titol, bib.diccionari) { paraula = null } }
+}
+
+/** Petit reproductor de la lectura en veu alta: anterior, pausa/continua, següent, velocitat. */
+@Composable
+private fun ReproductorVeu(veu: LectorVeu, a: Ajustos, canvia: (Ajustos) -> Unit) {
+    Row(
+        Modifier.padding(12.dp).fillMaxWidth().background(Xoriguer.Ui, RoundedCornerShape(28.dp)).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Default.Headphones, null, tint = Xoriguer.Taronja, modifier = Modifier.padding(start = 8.dp))
+        IconButton({ veu.salta(-1) }, enabled = veu.actiu) { Icon(Icons.Default.SkipPrevious, "Paràgraf anterior", tint = Xoriguer.Crema) }
+        IconButton({ if (veu.actiu) veu.pausa() else veu.comenca(veu.index) }) {
+            Icon(if (veu.actiu) Icons.Default.Pause else Icons.Default.PlayArrow, if (veu.actiu) "Pausa" else "Continua", tint = Xoriguer.Crema)
+        }
+        IconButton({ veu.salta(1) }, enabled = veu.actiu) { Icon(Icons.Default.SkipNext, "Paràgraf següent", tint = Xoriguer.Crema) }
+        Spacer(Modifier.weight(1f))
+        val velocitats = listOf(.75f, 1f, 1.25f, 1.5f, 2f)
+        TextButton({ canvia(a.copy(velocitatVeu = velocitats[(velocitats.indexOf(a.velocitatVeu) + 1) % velocitats.size])) }) {
+            Text("${a.velocitatVeu}×".replace(".0×", "×"), color = Xoriguer.Crema)
+        }
+        if (veu.actiu) IconButton({ veu.atura() }) { Icon(Icons.Default.Close, "Atura", tint = Xoriguer.Mut) }
+    }
 }
 
 /** Fracció llegida (0..1). Compta també quant s'ha avançat dins del paràgraf de dalt: n'hi ha de molt llargs. */
@@ -185,19 +271,25 @@ private suspend fun anaA(l: LazyListState, total: Int, v: Float) {
     if (mida > 0) l.scrollBy((pos - index) * mida)
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+/** Gest de tocar (x en píxels dins de l'element) i de mantenir premut. */
+private fun Modifier.tocs(toca: (Float) -> Unit, mantePremut: (() -> Unit)? = null) = pointerInput(toca, mantePremut) {
+    detectTapGestures(onTap = { toca(it.x) }, onLongPress = mantePremut?.let { f -> { f() } })
+}
+
 @Composable
 private fun TextLlibre(
-    c: Contingut, llista: LazyListState, a: Ajustos, cites: Map<Int, List<Anotacio>>,
-    mantePremut: (Int) -> Unit, toca: () -> Unit,
+    c: Contingut, llista: LazyListState, a: Ajustos, cites: Map<Int, List<Anotacio>>, llegint: Int?,
+    mantePremut: (Int) -> Unit, toca: (Float) -> Unit,
 ) {
-    val familia = if (a.serif) FontFamily.Serif else FontFamily.SansSerif
+    val familia = remember(a.font) { familiaDe(a.font) }
     // A les pantalles amples el text no passa de ~44 em, com en un llibre de paper
     val maxAmple = (a.mida * 44).dp + (a.marge * 2).dp
-    run {
+    var xArrel by remember { mutableStateOf(0f) }
+    BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { xArrel = it.positionInRoot().x }) {
+        val ampleTotal = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         LazyColumn(
             state = llista,
-            modifier = Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null, onClick = toca),
+            modifier = Modifier.fillMaxSize().tocs({ toca(it / ampleTotal) }),
             contentPadding = PaddingValues(vertical = 48.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -206,27 +298,31 @@ private fun TextLlibre(
                 val text = ambCites(b.text, meves)
                 var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
                 val fons = Modifier.drawBehind { pintaCites(layout, meves, a.tema) }
+                var x0 by remember { mutableStateOf(0f) }
                 Box(
                     Modifier.widthIn(max = maxAmple).fillMaxWidth()
-                        .combinedClickable(remember { MutableInteractionSource() }, null, onLongClick = { mantePremut(i) }, onClick = toca)
+                        .then(if (llegint == i) Modifier.background(Xoriguer.Taronja.copy(alpha = .13f), RoundedCornerShape(6.dp)) else Modifier)
+                        .onGloballyPositioned { x0 = it.positionInRoot().x - xArrel }
+                        // la posició del toc es passa respecte de tota la pantalla, no del paràgraf
+                        .tocs({ x -> toca((x0 + x) / ampleTotal) }, { mantePremut(i) })
                         .padding(horizontal = a.marge.dp),
                 ) {
-                when (b.tipus) {
-                    TipusBloc.TITOL -> Text(
-                        text, color = a.tema.text, fontFamily = familia, fontWeight = FontWeight.Bold,
-                        fontSize = (a.mida * 1.35f).sp, lineHeight = 1.25.em, textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp).then(fons), onTextLayout = { layout = it },
-                    )
-                    TipusBloc.SUBTITOL -> Text(
-                        text, color = a.tema.text, fontFamily = familia, fontWeight = FontWeight.SemiBold,
-                        fontSize = (a.mida * 1.12f).sp, lineHeight = 1.3.em, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp).then(fons), onTextLayout = { layout = it },
-                    )
-                    TipusBloc.PARAGRAF -> Text(
-                        text, color = a.tema.text, fontFamily = familia, fontSize = a.mida.sp, lineHeight = a.interlineat.em,
-                        textAlign = if (a.justificat) TextAlign.Justify else TextAlign.Start,
-                        modifier = Modifier.padding(bottom = (a.mida * .55f).dp).then(fons), onTextLayout = { layout = it },
-                    )
-                }
+                    when (b.tipus) {
+                        TipusBloc.TITOL -> Text(
+                            text, color = a.tema.text, fontFamily = familia, fontWeight = FontWeight.Bold,
+                            fontSize = (a.mida * 1.35f).sp, lineHeight = 1.25.em, textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp).then(fons), onTextLayout = { layout = it },
+                        )
+                        TipusBloc.SUBTITOL -> Text(
+                            text, color = a.tema.text, fontFamily = familia, fontWeight = FontWeight.SemiBold,
+                            fontSize = (a.mida * 1.12f).sp, lineHeight = 1.3.em, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp).then(fons), onTextLayout = { layout = it },
+                        )
+                        TipusBloc.PARAGRAF -> Text(
+                            text, color = a.tema.text, fontFamily = familia, fontSize = a.mida.sp, lineHeight = a.interlineat.em,
+                            textAlign = if (a.justificat) TextAlign.Justify else TextAlign.Start,
+                            modifier = Modifier.padding(bottom = (a.mida * .55f).dp).then(fons), onTextLayout = { layout = it },
+                        )
+                    }
                 }
             }
         }
@@ -234,12 +330,12 @@ private fun TextLlibre(
 }
 
 @Composable
-private fun PdfLlibre(doc: DocumentPdf, llista: LazyListState, tema: TemaLectura, toca: () -> Unit) {
+private fun PdfLlibre(doc: DocumentPdf, llista: LazyListState, tema: TemaLectura, toca: (Float) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val ample = with(LocalDensity.current) { maxWidth.roundToPx() }.coerceAtMost(2400)
         LazyColumn(
             state = llista,
-            modifier = Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null, onClick = toca),
+            modifier = Modifier.fillMaxSize().tocs({ toca(it / constraints.maxWidth.coerceAtLeast(1)) }),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -250,6 +346,30 @@ private fun PdfLlibre(doc: DocumentPdf, llista: LazyListState, tema: TemaLectura
                 if (im != null) Image(im, "Pàgina ${i + 1}", Modifier.fillMaxWidth().aspectRatio(im.width.toFloat() / im.height), contentScale = ContentScale.FillWidth)
                 else Box(Modifier.fillMaxWidth().aspectRatio(0.707f).background(tema.suau.copy(alpha = .15f)), contentAlignment = Alignment.Center) {
                     Text("${i + 1}", color = tema.suau)
+                }
+            }
+        }
+    }
+}
+
+/** Miniatures de totes les pàgines d'un PDF o còmic: navegació visual ràpida. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PanellMiniatures(doc: DocumentPdf, actual: Int, ves: (Int) -> Unit, tanca: () -> Unit) {
+    ModalBottomSheet(tanca, containerColor = Xoriguer.Ui, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Text("Pàgines", color = Xoriguer.Taronja, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+        val estat = androidx.compose.foundation.lazy.grid.rememberLazyGridState((actual - 3).coerceAtLeast(0))
+        LazyVerticalGrid(GridCells.Adaptive(96.dp), Modifier.fillMaxWidth().heightIn(max = 640.dp), estat, PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(doc.pagines) { i ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { ves(i); tanca() }) {
+                    val img by produceState<ImageBitmap?>(null, i) { value = doc.pagina(i, 220) }
+                    Box(
+                        Modifier.fillMaxWidth().aspectRatio(.707f).background(Xoriguer.Ui2, RoundedCornerShape(4.dp))
+                            .border(if (i == actual) 2.dp else 0.dp, if (i == actual) Xoriguer.Taronja else Xoriguer.Ui2, RoundedCornerShape(4.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) { img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) } }
+                    Text("${i + 1}", color = if (i == actual) Xoriguer.Taronja else Xoriguer.Mut, fontSize = 12.sp)
                 }
             }
         }
@@ -284,8 +404,13 @@ private fun BarraPosicio(llista: LazyListState, total: Int, pdf: Boolean) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PanellAjustos(a: Ajustos, canvia: (Ajustos) -> Unit, tanca: () -> Unit) {
+    // fonts de l'usuari: fitxers .ttf/.otf de la carpeta de fonts
+    val propies = remember {
+        runCatching { Plataforma.llistaFitxers(Plataforma.carpetaFonts(), 2) }.getOrDefault(emptyList())
+            .filter { it.nom.substringAfterLast('.').lowercase() in setOf("ttf", "otf") }.sortedBy { it.nom.lowercase() }
+    }
     ModalBottomSheet(tanca, containerColor = Xoriguer.Ui) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScrollSiCal(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Tema", color = Xoriguer.Mut, fontSize = 12.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TemaLectura.entries.forEach { t ->
@@ -302,15 +427,27 @@ private fun PanellAjustos(a: Ajustos, canvia: (Ajustos) -> Unit, tanca: () -> Un
             Fila("Mida de la lletra", "${a.mida.toInt()}") { Slider(a.mida, { canvia(a.copy(mida = it)) }, valueRange = 12f..34f, colors = colorsSlider()) }
             Fila("Interlineat", ((a.interlineat * 100).toInt() / 100.0).toString()) { Slider(a.interlineat, { canvia(a.copy(interlineat = it)) }, valueRange = 1.1f..2.2f, colors = colorsSlider()) }
             Fila("Marges", "${a.marge}") { Slider(a.marge.toFloat(), { canvia(a.copy(marge = it.toInt())) }, valueRange = 4f..64f, colors = colorsSlider()) }
+            Text("Tipus de lletra", color = Xoriguer.Mut, fontSize = 12.sp)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Opcio("Serif", a.font == "serif") { canvia(a.copy(font = "serif")) }
+                Opcio("Sans", a.font == "sans") { canvia(a.copy(font = "sans")) }
+                Opcio("Mono", a.font == "mono") { canvia(a.copy(font = "mono")) }
+                propies.forEach { f -> Opcio(f.nom.substringBeforeLast('.'), a.font == f.cami) { canvia(a.copy(font = f.cami)) } }
+            }
+            Text(
+                "Els meus tipus de lletra: posa fitxers .ttf o .otf a «${Plataforma.carpetaFonts()}» i torna a obrir aquest panell.",
+                color = Xoriguer.Mut, fontSize = 11.sp,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Opcio("Serif", a.serif) { canvia(a.copy(serif = true)) }
-                Opcio("Sans", !a.serif) { canvia(a.copy(serif = false)) }
-                Spacer(Modifier.width(12.dp))
                 Opcio("Justificat", a.justificat) { canvia(a.copy(justificat = !a.justificat)) }
+                Opcio("Passa pàgina tocant els costats", a.passaPagina) { canvia(a.copy(passaPagina = !a.passaPagina)) }
             }
         }
     }
 }
+
+@Composable
+private fun Modifier.verticalScrollSiCal() = this.then(Modifier.verticalScroll(rememberScrollState()))
 
 @Composable
 private fun colorsSlider() = SliderDefaults.colors(thumbColor = Xoriguer.Taronja, activeTrackColor = Xoriguer.Taronja, inactiveTrackColor = Xoriguer.Ui3)
@@ -324,7 +461,7 @@ private fun Fila(nom: String, valor: String, control: @Composable () -> Unit) = 
 @Composable
 private fun Opcio(text: String, actiu: Boolean, onClick: () -> Unit) = Box(
     Modifier.background(if (actiu) Xoriguer.Taronja else Xoriguer.Ui2, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 7.dp),
-) { Text(text, color = if (actiu) Xoriguer.Fons else Xoriguer.Txt, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+) { Text(text, color = if (actiu) Xoriguer.Fons else Xoriguer.Txt, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1) }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -367,7 +504,7 @@ private fun PanellIndex(caps: List<Capitol>, meves: List<Anotacio>, llista: Lazy
                 else -> {
                     if (cites.isEmpty()) item { Buidet("Mantén premut un paràgraf per ressaltar-lo o afegir-hi una nota.") }
                     itemsIndexed(cites) { _, a ->
-                        TargetaCita(a, false, { ves(a.bloc) }) { IconButton({ editant = a }) { Icon(Icons.Default.TextFields, "Edita", tint = Xoriguer.Mut) } }
+                        TargetaCita(a, false, { ves(a.bloc) }) { IconButton({ editant = a }) { Icon(Icons.Default.Edit, "Edita", tint = Xoriguer.Mut) } }
                     }
                 }
             }

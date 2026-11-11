@@ -23,6 +23,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.lang.ref.WeakReference
 import java.util.zip.ZipFile
+import android.provider.DocumentsContract
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import kotlinx.coroutines.CompletableDeferred
 
 actual object Plataforma {
     actual val nom: String = "Android"
@@ -71,8 +75,46 @@ actual object Plataforma {
         }
     }
 
-    // A Android es busca a tota la memòria; triar carpetes concretes vindrà més endavant.
-    actual suspend fun triaCarpeta(): String? = null
+    /** El selector de carpetes del sistema (ACTION_OPEN_DOCUMENT_TREE); MainActivity el llança i hi respon. */
+    internal var demanaCarpeta: ((CompletableDeferred<String?>) -> Unit)? = null
+
+    actual suspend fun triaCarpeta(): String? {
+        val d = CompletableDeferred<String?>()
+        demanaCarpeta?.invoke(d) ?: return null
+        return d.await()
+    }
+
+    /** content://…/tree/primary:Llibres/Novel·la → /storage/emulated/0/Llibres/Novel·la */
+    internal fun camiDeArbre(uri: Uri?): String? {
+        val doc = uri?.let { runCatching { DocumentsContract.getTreeDocumentId(it) }.getOrNull() } ?: return null
+        val (vol, rel) = doc.split(':', limit = 2).let { it[0] to it.getOrElse(1) { "" } }
+        val arrel = if (vol == "primary") Environment.getExternalStorageDirectory().absolutePath else "/storage/$vol"
+        return if (rel.isEmpty()) arrel else "$arrel/$rel"
+    }
+
+    private val baixades get() = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Lectura Xoriguer")
+
+    actual suspend fun descarrega(url: String): ByteArray = Jvm.descarrega(url)
+    actual fun carpetaBaixades(): String = baixades.apply { mkdirs() }.absolutePath
+    actual fun carpetaFonts(): String = File(baixades, "Fonts").apply { mkdirs() }.absolutePath
+    actual fun escriu(cami: String, bytes: ByteArray) = Jvm.escriu(cami, bytes)
+    actual fun creaCarpeta(cami: String) = Jvm.creaCarpeta(cami)
+    actual fun reanomena(cami: String, nouNom: String): String? = Jvm.reanomena(cami, nouNom)
+    actual fun mou(cami: String, carpeta: String): String? = Jvm.mou(cami, carpeta)
+    actual fun esborra(cami: String): Boolean = Jvm.esborra(cami)
+    actual fun font(cami: String): FontFamily? = runCatching { FontFamily(Font(File(cami))) }.getOrNull()
+    actual val veu: Veu by lazy { VeuAndroid(app) }
+    actual fun obreWeb(url: String) {
+        val a = activitat.get() ?: return
+        runCatching { a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+    }
+
+    /** A Android 13+ cal permís per mostrar la notificació de la lectura en veu alta. */
+    fun demanaNotificacions() {
+        val a = activitat.get() ?: return
+        if (Build.VERSION.SDK_INT >= 33 && a.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            a.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2)
+    }
 }
 
 @Composable

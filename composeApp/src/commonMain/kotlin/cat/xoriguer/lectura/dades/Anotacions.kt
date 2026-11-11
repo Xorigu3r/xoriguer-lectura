@@ -78,7 +78,19 @@ class Anotacions(private val fitxer: String? = "anotacions.tsv") {
 
     fun esborra(a: Anotacio) { if (totes.removeAll { it.id == a.id }) desa() }
 
-    fun marcador(cami: String, bloc: Int) = totes.firstOrNull { it.cami == cami && it.tipus == TipusAnotacio.MARCADOR && it.bloc == bloc }
+    /** El fitxer ha canviat de nom o de lloc: les cites el segueixen. */
+    fun canviaCami(vell: String, nou: String) {
+        var canvi = false
+        for (i in totes.indices) if (totes[i].cami == vell) { totes[i] = totes[i].copy(cami = nou); canvi = true }
+        if (canvi) desa()
+    }
+
+    fun recarrega() {
+        totes.clear()
+        fitxer?.let { Plataforma.llegeixDada(it) }?.lineSequence()?.mapNotNull(::deLinia)?.let(totes::addAll)
+    }
+
+    fun marcador(cami: String, bloc: Int) =totes.firstOrNull { it.cami == cami && it.tipus == TipusAnotacio.MARCADOR && it.bloc == bloc }
 
     private fun desa() { fitxer?.let { Plataforma.desaDada(it, totes.joinToString("\n", transform = ::aLinia)) } }
 
