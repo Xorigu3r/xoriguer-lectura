@@ -73,27 +73,49 @@ fun BibliotecaPantalla(bib: Biblioteca, obreCites: () -> Unit, obre: (Llibre) ->
     }
 
     Column(Modifier.fillMaxSize().background(Xoriguer.Fons)) {
-        Capcalera {
-            IconButton({ cercant = !cercant; if (!cercant) cerca = "" }) { Icon(Icons.Default.Search, "Cerca", tint = Xoriguer.Crema) }
-            IconButton({ vista = if (vista == Vista.QUADRICULA) Vista.LLISTA else Vista.QUADRICULA }) {
-                Icon(if (vista == Vista.QUADRICULA) Icons.Default.ViewList else Icons.Default.GridView, "Vista", tint = Xoriguer.Crema)
-            }
-            Box {
-                IconButton({ menuOrdre = true }) { Icon(Icons.Default.Sort, "Ordena", tint = Xoriguer.Crema) }
-                DropdownMenu(menuOrdre, { menuOrdre = false }) {
-                    Ordre.entries.forEach { o ->
-                        DropdownMenuItem({ Text(o.nom, color = if (o == ordre) Xoriguer.Taronja else Xoriguer.Txt) }, { ordre = o; menuOrdre = false })
+        // Al mòbil no hi caben els 6 botons: es queden Cerca i Cites, i la resta va al menú ⋮
+        BoxWithConstraints {
+            val estret = maxWidth < 600.dp
+            var menu by remember { mutableStateOf(false) }
+            Capcalera {
+                IconButton({ cercant = !cercant; if (!cercant) cerca = "" }) { Icon(Icons.Default.Search, "Cerca", tint = Xoriguer.Crema) }
+                IconButton(obreCites) {
+                    val n = bib.anotacions.totes.size
+                    BadgedBox({ if (n > 0) Badge(containerColor = Xoriguer.Taronja, contentColor = Xoriguer.Fons) { Text("$n") } }) {
+                        Icon(Icons.Default.FormatQuote, "Cites i notes", tint = Xoriguer.Crema)
+                    }
+                }
+                if (!estret) {
+                    IconButton({ vista = if (vista == Vista.QUADRICULA) Vista.LLISTA else Vista.QUADRICULA }) {
+                        Icon(if (vista == Vista.QUADRICULA) Icons.Default.ViewList else Icons.Default.GridView, "Vista", tint = Xoriguer.Crema)
+                    }
+                    IconButton({ menuOrdre = true }) { Icon(Icons.Default.Sort, "Ordena", tint = Xoriguer.Crema) }
+                    IconButton({ carpetesObert = true }) { Icon(Icons.Default.Folder, "Carpetes", tint = Xoriguer.Crema) }
+                    IconButton({ scope.launch { bib.escaneja() } }, enabled = !bib.escanejant) { Icon(Icons.Default.Refresh, "Torna a cercar", tint = Xoriguer.Crema) }
+                }
+                Box {
+                    if (estret) IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, "Més opcions", tint = Xoriguer.Crema) }
+                    DropdownMenu(menu, { menu = false }, containerColor = Xoriguer.Ui) {
+                        val llista = vista == Vista.QUADRICULA
+                        DropdownMenuItem(
+                            { Text(if (llista) "Vista de llista" else "Vista de quadrícula") },
+                            { vista = if (llista) Vista.LLISTA else Vista.QUADRICULA; menu = false },
+                            leadingIcon = { Icon(if (llista) Icons.Default.ViewList else Icons.Default.GridView, null) },
+                        )
+                        DropdownMenuItem({ Text("Ordena: ${ordre.nom.lowercase()}") }, { menu = false; menuOrdre = true }, leadingIcon = { Icon(Icons.Default.Sort, null) })
+                        DropdownMenuItem({ Text("Carpetes") }, { menu = false; carpetesObert = true }, leadingIcon = { Icon(Icons.Default.Folder, null) })
+                        DropdownMenuItem(
+                            { Text("Torna a cercar llibres") }, { menu = false; scope.launch { bib.escaneja() } },
+                            enabled = !bib.escanejant, leadingIcon = { Icon(Icons.Default.Refresh, null) },
+                        )
+                    }
+                    DropdownMenu(menuOrdre, { menuOrdre = false }, containerColor = Xoriguer.Ui) {
+                        Ordre.entries.forEach { o ->
+                            DropdownMenuItem({ Text(o.nom, color = if (o == ordre) Xoriguer.Taronja else Xoriguer.Txt) }, { ordre = o; menuOrdre = false })
+                        }
                     }
                 }
             }
-            IconButton(obreCites) {
-                val n = bib.anotacions.totes.size
-                BadgedBox({ if (n > 0) Badge(containerColor = Xoriguer.Taronja, contentColor = Xoriguer.Fons) { Text("$n") } }) {
-                    Icon(Icons.Default.FormatQuote, "Cites i notes", tint = Xoriguer.Crema)
-                }
-            }
-            IconButton({ carpetesObert = true }) { Icon(Icons.Default.Folder, "Carpetes", tint = Xoriguer.Crema) }
-            IconButton({ scope.launch { bib.escaneja() } }, enabled = !bib.escanejant) { Icon(Icons.Default.Refresh, "Torna a cercar", tint = Xoriguer.Crema) }
         }
         if (bib.escanejant) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = Xoriguer.Taronja, trackColor = Xoriguer.Fons)
 

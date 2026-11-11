@@ -40,8 +40,9 @@ fun Capcalera(accions: @Composable RowScope.() -> Unit = {}) {
             Image(painterResource(Res.drawable.icona), null, Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)))
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("LECTURA", color = Xoriguer.Crema, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, fontSize = 20.sp, lineHeight = 20.sp)
-                Text("X O R I G U E R", color = Xoriguer.Taronja, fontWeight = FontWeight.Bold, fontSize = 10.sp, lineHeight = 11.sp)
+                // Mai partit en línies: si no hi cap, es retalla (amb la mida de lletra gran del mòbil)
+                Text("LECTURA", color = Xoriguer.Crema, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, fontSize = 20.sp, lineHeight = 20.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                Text("X O R I G U E R", color = Xoriguer.Taronja, fontWeight = FontWeight.Bold, fontSize = 10.sp, lineHeight = 11.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
             }
             accions()
         }

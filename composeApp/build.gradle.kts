@@ -57,8 +57,8 @@ android {
         applicationId = "cat.xoriguer.lectura"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
@@ -79,7 +79,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "Lectura Xoriguer"
-            packageVersion = "0.1.0"
+            packageVersion = "0.1.1"
             description = "Lector de llibres electrònics"
             vendor = "Xoriguer"
             windows {
