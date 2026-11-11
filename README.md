@@ -38,7 +38,7 @@ Cal el JDK 17 i, per a Android, l'SDK d'Android.
 ```
 .\gradlew :composeApp:run              # Windows
 .\gradlew :composeApp:packageMsi       # instal·lador de Windows
-.\gradlew :composeApp:assembleDebug    # APK d'Android
+.gradlew :composeApp:assembleRelease  # APK d'Android (signat amb la clau de %USERPROFILE%.lectura-xoriguer)
 ```
 
 L'iPhone es compila des d'un Mac amb Xcode.

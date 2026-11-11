@@ -32,7 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cat.xoriguer.lectura.Plataforma
 import cat.xoriguer.lectura.Seccio
+import cat.xoriguer.lectura.dades.Actualitzacions
 import cat.xoriguer.lectura.dades.Biblioteca
+import cat.xoriguer.lectura.dades.VersioNova
 import cat.xoriguer.lectura.dades.Format
 import cat.xoriguer.lectura.dades.Llibre
 import cat.xoriguer.lectura.res.Res
@@ -80,6 +82,10 @@ fun BibliotecaPantalla(bib: Biblioteca, ves: (Seccio) -> Unit, obre: (Llibre) ->
     var carpetesObert by remember { mutableStateOf(false) }
     var sincroObert by remember { mutableStateOf(false) }
     var fitxa by remember { mutableStateOf<Llibre?>(null) }
+    var quantA by remember { mutableStateOf(false) }
+    // Avís de versions noves (com a molt una consulta a internet al dia)
+    var nova by remember { mutableStateOf<VersioNova?>(null) }
+    LaunchedEffect(Unit) { nova = runCatching { Actualitzacions.comprova() }.getOrNull()?.takeIf { it.versio != Actualitzacions.ignorada } }
 
     val progres = bib.progres.toMap()
     val llista = remember(bib.llibres, cerca, filtre, colleccio, nomesLlegint, prefs.ordre, progres, bib.colleccions) {
@@ -151,6 +157,7 @@ fun BibliotecaPantalla(bib: Biblioteca, ves: (Seccio) -> Unit, obre: (Llibre) ->
                         Op("Carpetes", Icons.Default.Folder) { carpetesObert = true }
                         Op("Còpia i sincronització", Icons.Default.Sync) { sincroObert = true }
                         if (estret) Op("Torna a cercar llibres", Icons.Default.Refresh) { scope.launch { bib.escaneja() } }
+                        Op("Quant a Lectura", Icons.Default.Info) { quantA = true }
                     }
                     DropdownMenu(menuOrdre, { menuOrdre = false }, containerColor = Xoriguer.Ui) {
                         Ordre.entries.forEach { o -> DropdownMenuItem({ Text(o.nom, color = if (o == prefs.ordre) Xoriguer.Taronja else Xoriguer.Txt) }, { canvia(prefs.copy(ordre = o)); menuOrdre = false }) }
@@ -165,6 +172,7 @@ fun BibliotecaPantalla(bib: Biblioteca, ves: (Seccio) -> Unit, obre: (Llibre) ->
             }
         }
         if (bib.escanejant) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = Xoriguer.Taronja, trackColor = Xoriguer.Fons)
+        nova?.let { v -> AvisVersioNova(v) { nova = null } }
 
         if (cercant) {
             OutlinedTextField(
@@ -235,6 +243,7 @@ fun BibliotecaPantalla(bib: Biblioteca, ves: (Seccio) -> Unit, obre: (Llibre) ->
 
     if (carpetesObert) DialegCarpetes(bib) { carpetesObert = false; scope.launch { bib.escaneja() } }
     if (sincroObert) DialegSincronitzacio(bib) { sincroObert = false }
+    if (quantA) DialegQuantA({ quantA = false }) { nova = it }
     fitxa?.let { l -> FitxaLlibre(l, bib, { fitxa = null; obre(it) }) { fitxa = null } }
 }
 

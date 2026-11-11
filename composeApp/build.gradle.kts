@@ -1,11 +1,38 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.androidApplication)
+}
+
+// La versió de l'app es canvia només aquí (Android, Windows i l'avís de versions noves la llegeixen d'aquí)
+val versioApp = "0.4.0"
+val codiVersio = 5 // +1 a cada versió (si no, Android no deixa actualitzar)
+
+/** Genera Versio.kt amb la versió, perquè l'app sàpiga quina és sense escriure-la dues vegades. */
+val generaVersio by tasks.registering {
+    val dir = layout.buildDirectory.dir("generated/versio/kotlin")
+    val v = versioApp
+    inputs.property("versio", v)
+    outputs.dir(dir)
+    doLast {
+        val f = dir.get().file("cat/xoriguer/lectura/Versio.kt").asFile
+        f.parentFile.mkdirs()
+        f.writeText(
+            listOf(
+                "package cat.xoriguer.lectura",
+                "",
+                "/** Versió de l'app (generat per Gradle des de composeApp/build.gradle.kts). */",
+                "const val VERSIO_APP = \"$v\"",
+                "",
+            ).joinToString("\n"),
+        )
+    }
 }
 
 kotlin {
@@ -21,6 +48,7 @@ kotlin {
     }
 
     sourceSets {
+        commonMain { kotlin.srcDir(generaVersio) }
         commonMain.dependencies {
             implementation(compose.runtime)
             implementation(compose.foundation)
@@ -61,14 +89,30 @@ android {
         applicationId = "cat.xoriguer.lectura"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.3.0"
+        versionCode = codiVersio
+        versionName = versioApp
     }
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
+    // Clau pròpia per signar l'APK. Es guarda FORA del projecte (no es puja mai a GitHub):
+    // %USERPROFILE%\.lectura-xoriguer\signatura.properties + lectura-xoriguer.jks. Si es perd, les
+    // actualitzacions ja no s'instal·larien a sobre: cal tenir-ne una còpia de seguretat.
+    val propsSignatura = File(System.getProperty("user.home"), ".lectura-xoriguer/signatura.properties")
+    signingConfigs {
+        if (propsSignatura.exists()) create("xoriguer") {
+            val p = Properties().apply { propsSignatura.inputStream().use { load(it) } }
+            storeFile = file(p.getProperty("storeFile"))
+            storePassword = p.getProperty("storePassword")
+            keyAlias = p.getProperty("keyAlias")
+            keyPassword = p.getProperty("keyPassword")
+        }
+    }
     buildTypes {
-        getByName("release") { isMinifyEnabled = false }
+        getByName("release") {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("xoriguer")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -83,7 +127,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "Lectura Xoriguer"
-            packageVersion = "0.3.0"
+            packageVersion = versioApp
             description = "Lector de llibres electrònics"
             vendor = "Xoriguer"
             windows {
