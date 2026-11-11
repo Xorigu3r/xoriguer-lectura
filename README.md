@@ -4,7 +4,7 @@ Lector de llibres electrònics gratuït i de codi obert per a **Android, Windows
 
 ![logo](empaquetar/logo/logo-1200.png)
 
-## Què fa (versió 0.2)
+## Què fa (versió 0.3)
 **Formats:** EPUB, PDF, Kindle (MOBI, AZW, AZW3 sense DRM), FB2, Word (DOCX), LibreOffice (ODT), RTF, TXT i còmics CBZ.
 
 **Biblioteca**
@@ -17,7 +17,9 @@ Lector de llibres electrònics gratuït i de codi obert per a **Android, Windows
 
 **Lectura**
 - Temes Nit, Sèpia, Dia i Gris; mida de lletra, interlineat, marges i text justificat. També **fonts pròpies** (.ttf/.otf).
-- Passes pàgina tocant els costats; el centre mostra els controls.
+- **Per pàgines, com un llibre:** «Pàgina 12 de 340» i el capítol a sota, i cada capítol comença en una pàgina nova.
+- Per passar pàgina: fletxes ‹ ›, tocar els costats, les tecles de fletxa (ordinador) o els botons de volum (Android).
+- Efecte de passar pàgina: girar, cobrir, lliscar o sense efecte. Si ho prefereixes, també hi ha el desplaçament continu.
 - **Lectura en veu alta**, també en segon pla i amb la pantalla bloquejada (Android).
 - **Cites** amb 6 colors, **notes** i **marcadors**. La secció «Cites i notes» les recull de tots els llibres.
 - **Diccionari** (Viquidiccionari / Wiktionary). La secció «Diccionari» recull totes les paraules buscades.

@@ -33,6 +33,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import kotlinx.coroutines.flow.onEach
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -48,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import cat.xoriguer.lectura.DocumentPdf
 import cat.xoriguer.lectura.Plataforma
 import cat.xoriguer.lectura.dades.*
+import cat.xoriguer.lectura.dades.ControlTecles
 import cat.xoriguer.lectura.formats.Llegidors
 import cat.xoriguer.lectura.tema.TemaLectura
 import cat.xoriguer.lectura.tema.Xoriguer
@@ -67,8 +77,14 @@ data class Ajustos(
     val justificat: Boolean = true,
     val passaPagina: Boolean = true,
     val velocitatVeu: Float = 1f,
+    /** true = per pàgines (com un llibre); false = desplaçament continu. */
+    val pagines: Boolean = true,
+    val efecte: Efecte = Efecte.GIRAR,
+    val fletxes: Boolean = true,
+    /** Botons de volum per passar pàgina (Android). */
+    val volum: Boolean = true,
 ) {
-    fun desa() = Plataforma.desaDada("lector.txt", listOf(mida, interlineat, marge, font, tema.name, justificat, passaPagina, velocitatVeu).joinToString("\n"))
+    fun desa() = Plataforma.desaDada("lector.txt", listOf(mida, interlineat, marge, font, tema.name, justificat, passaPagina, velocitatVeu, pagines, efecte.name, fletxes, volum).joinToString("\n"))
 
     companion object {
         fun carrega(): Ajustos {
@@ -81,6 +97,8 @@ data class Ajustos(
                 s(0)?.toFloatOrNull() ?: d.mida, s(1)?.toFloatOrNull() ?: d.interlineat, s(2)?.toIntOrNull() ?: d.marge, font,
                 s(4)?.let { runCatching { TemaLectura.valueOf(it) }.getOrNull() } ?: d.tema, s(5)?.toBooleanStrictOrNull() ?: d.justificat,
                 s(6)?.toBooleanStrictOrNull() ?: d.passaPagina, s(7)?.toFloatOrNull() ?: d.velocitatVeu,
+                s(8)?.toBooleanStrictOrNull() ?: d.pagines, s(9)?.let { runCatching { Efecte.valueOf(it) }.getOrNull() } ?: d.efecte,
+                s(10)?.toBooleanStrictOrNull() ?: d.fletxes, s(11)?.toBooleanStrictOrNull() ?: d.volum,
             )
         }
     }
@@ -112,7 +130,16 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
     var miniatures by remember { mutableStateOf(false) }
     var seleccionat by remember { mutableStateOf<Int?>(null) }
     var paraula by remember { mutableStateOf<String?>(null) }
+
+    // On érem: el mode per pàgines desa el caràcter en negatiu; el continu, els píxels en positiu
     val inicial = remember { bib.progres[llibre.cami] }
+    var posicio by remember {
+        mutableStateOf(
+            if (anarA != null) anarA to 0
+            else (inicial?.posicio ?: 0) to (inicial?.desplacament?.let { if (it < 0) -it - 1 else 0 } ?: 0),
+        )
+    }
+    val pxInicial = remember { if (anarA == null) inicial?.desplacament?.takeIf { it > 0 } ?: 0 else 0 }
 
     val estat by produceState<Estat>(Estat.Carregant, llibre.cami) {
         value = withContext(Dispatchers.Default) {
@@ -128,50 +155,86 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
     val obert = estat
     DisposableEffect(obert) { onDispose { (obert as? Estat.Pdf)?.doc?.tanca() } }
 
-    val llista = rememberLazyListState(anarA ?: inicial?.posicio ?: 0, if (anarA != null) 0 else inicial?.desplacament ?: 0)
-    val meves = bib.anotacions.totes.filter { it.cami == llibre.cami }
-    val citesPerBloc = remember(meves) { meves.filter { it.tipus == TipusAnotacio.CITA }.groupBy { it.bloc } }
-    val marcadorAqui = meves.firstOrNull { it.tipus == TipusAnotacio.MARCADOR && it.bloc == llista.firstVisibleItemIndex }
     val total = when (val e = estat) { is Estat.Text -> e.c.blocs.size; is Estat.Pdf -> e.doc.pagines; else -> 0 }
     val text = estat as? Estat.Text
+    val esPdf = estat is Estat.Pdf
+    val perPagines = ajustos.pagines
+
+    // Navegació: per pàgines (la crea la vista quan té les pàgines fetes) o continu (llista)
+    val llista = rememberLazyListState(posicio.first, pxInicial)
+    var navPagines by remember { mutableStateOf<NavPagines?>(null) }
+    val navLlista = remember(llista, total, esPdf) { NavLlista(llista, total, esPdf) }
+    val nav: Navegacio? = if (total == 0) null else if (perPagines) navPagines else navLlista
+
+    val meves = bib.anotacions.totes.filter { it.cami == llibre.cami }
+    val citesPerBloc = remember(meves) { meves.filter { it.tipus == TipusAnotacio.CITA }.groupBy { it.bloc } }
+    val blocActual = nav?.blocActual ?: posicio.first
+    val marcadorAqui = meves.firstOrNull { it.tipus == TipusAnotacio.MARCADOR && it.bloc == blocActual }
 
     // Lectura en veu alta
     val veu = remember(text) { text?.let { LectorVeu(it.c.blocs, it.idioma, llibre.titol) } }
     DisposableEffect(veu) { onDispose { veu?.atura() } }
     LaunchedEffect(ajustos.velocitatVeu, veu) { veu?.velocitat = ajustos.velocitatVeu }
-    // segueix el paràgraf que es llegeix
-    LaunchedEffect(veu?.index, veu?.actiu) {
+    LaunchedEffect(veu?.index, veu?.actiu, nav) {
         val v = veu ?: return@LaunchedEffect
-        if (!v.actiu) return@LaunchedEffect
-        val vis = llista.layoutInfo.visibleItemsInfo
-        if (vis.none { it.index == v.index } || vis.lastOrNull()?.index == v.index) llista.animateScrollToItem(v.index)
+        if (v.actiu) nav?.segueix(v.index)
     }
 
-    // Desa el progrés quan es para de desplaçar
-    LaunchedEffect(llista, total) {
-        if (total == 0) return@LaunchedEffect
+    // Recorda on som (per refer les pàgines en canviar la lletra) i desa el progrés quan es para
+    LaunchedEffect(nav) {
+        val n = nav ?: return@LaunchedEffect
         @OptIn(kotlinx.coroutines.FlowPreview::class)
-        snapshotFlow { llista.firstVisibleItemIndex to llista.firstVisibleItemScrollOffset }
-            .distinctUntilChanged().debounce(400)
-            .collect { (i, o) -> bib.desaProgres(llibre, i, o, percent(llista, total)) }
+        snapshotFlow { n.perDesar() }
+            .distinctUntilChanged()
+            .onEach { (b, d) -> posicio = b to (if (d < 0) -d - 1 else 0) }
+            .debounce(400)
+            .collect { (b, d) -> bib.desaProgres(llibre, b, d, n.fraccio) }
     }
 
-    // Tocar: costats = passar pàgina (si està activat), centre = mostrar/amagar els controls
+    fun endavant() { scope.launch { nav?.seguent() } }
+    fun enrere() { scope.launch { nav?.anterior() } }
+
+    // Tocar: costats = passar pàgina, centre = mostrar/amagar els controls
     fun toca(x: Float) {
-        if (controls || !ajustos.passaPagina || x in 0.3f..0.7f) { controls = !controls; return }
-        scope.launch {
-            val alt = llista.layoutInfo.viewportSize.height * .9f
-            llista.animateScrollBy(if (x > .5f) alt else -alt)
-        }
+        val costats = perPagines || ajustos.passaPagina
+        if (controls || !costats || x in 0.3f..0.7f) { controls = !controls; return }
+        if (x > .5f) endavant() else enrere()
+    }
+
+    // Tecles: fletxes, AvPàg/RePàg i espai (ordinador); botons de volum (Android)
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(estat) { runCatching { focus.requestFocus() } }
+    DisposableEffect(nav, ajustos.volum) {
+        ControlTecles.volum = if (ajustos.volum && nav != null) { amunt -> if (veu?.actiu == true) false else { if (amunt) enrere() else endavant(); true } } else null
+        onDispose { ControlTecles.volum = null }
     }
 
     val tema = ajustos.tema
-    Box(Modifier.fillMaxSize().background(tema.fons)) {
+    val capitol = text?.c?.capitols?.let { capitolDe(it, blocActual) }
+    Box(
+        Modifier.fillMaxSize().background(tema.fons).focusRequester(focus).focusable()
+            .onPreviewKeyEvent { k ->
+                if (k.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (k.key) {
+                    Key.DirectionRight, Key.PageDown, Key.Spacebar -> { endavant(); true }
+                    Key.DirectionLeft, Key.PageUp -> { enrere(); true }
+                    else -> false
+                }
+            },
+    ) {
         when (val e = estat) {
             Estat.Carregant -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = Xoriguer.Taronja)
             is Estat.Error -> Text(e.missatge, Modifier.align(Alignment.Center).padding(32.dp), color = tema.text, textAlign = TextAlign.Center)
-            is Estat.Text -> TextLlibre(e.c, llista, ajustos, citesPerBloc, veu?.takeIf { it.actiu }?.index, { seleccionat = it }, ::toca)
-            is Estat.Pdf -> PdfLlibre(e.doc, llista, tema, ::toca)
+            is Estat.Text ->
+                if (perPagines) MarcPagines(nav, tema, ajustos.fletxes, capitol, ::enrere, ::endavant) {
+                    TextPaginat(e.c, ajustos, citesPerBloc, veu?.takeIf { it.actiu }?.index, posicio, { navPagines = it }, { seleccionat = it }, ::toca)
+                }
+                else TextLlibre(e.c, llista, ajustos, citesPerBloc, veu?.takeIf { it.actiu }?.index, { seleccionat = it }, ::toca)
+            is Estat.Pdf ->
+                if (perPagines) MarcPagines(nav, tema, ajustos.fletxes, null, ::enrere, ::endavant) {
+                    DocumentPaginat(e.doc, ajustos, posicio.first, { navPagines = it }, ::toca)
+                }
+                else PdfLlibre(e.doc, llista, tema, ::toca)
         }
 
         AnimatedVisibility(controls, Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
@@ -184,21 +247,21 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
                     }
                     if (veu != null && Plataforma.veu.disponible) IconButton({
                         controls = false
-                        if (veu.actiu) veu.pausa() else veu.comenca(llista.firstVisibleItemIndex)
+                        if (veu.actiu) veu.pausa() else veu.comenca(blocActual)
                     }) { Icon(Icons.Default.Headphones, "Llegeix en veu alta", tint = if (veu.actiu) Xoriguer.Taronja else Xoriguer.Crema) }
                     if (total > 0) IconButton({
                         if (marcadorAqui != null) bib.anotacions.esborra(marcadorAqui)
                         else {
-                            val i = llista.firstVisibleItemIndex
+                            val i = blocActual
                             val t = text?.c?.blocs?.getOrNull(i)?.text?.let { if (it.length > 90) it.take(90).trimEnd() + "…" else it } ?: "Pàgina ${i + 1}"
-                            bib.anotacions.nova(llibre, TipusAnotacio.MARCADOR, i, 0, 0, t, percent = percent(llista, total))
+                            bib.anotacions.nova(llibre, TipusAnotacio.MARCADOR, i, 0, 0, t, percent = nav?.fraccio ?: 0f)
                         }
                     }) {
                         Icon(if (marcadorAqui != null) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, "Marcador", tint = if (marcadorAqui != null) Xoriguer.Taronja else Xoriguer.Crema)
                     }
-                    if (estat is Estat.Pdf) IconButton({ miniatures = true }) { Icon(Icons.Default.GridView, "Miniatures de les pàgines", tint = Xoriguer.Crema) }
+                    if (esPdf) IconButton({ miniatures = true }) { Icon(Icons.Default.GridView, "Miniatures de les pàgines", tint = Xoriguer.Crema) }
                     if (total > 0) IconButton({ panellIndex = true }) { Icon(Icons.AutoMirrored.Filled.List, "Índex, marcadors i cites", tint = Xoriguer.Crema) }
-                    if (text != null) IconButton({ panellAjustos = true }) { Icon(Icons.Default.TextFields, "Lletra", tint = Xoriguer.Crema) }
+                    if (total > 0) IconButton({ panellAjustos = true }) { Icon(Icons.Default.TextFields, "Ajustos de lectura", tint = Xoriguer.Crema) }
                 }
                 Box(Modifier.fillMaxWidth().height(2.dp).background(Xoriguer.Taronja))
             }
@@ -206,15 +269,15 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
             if (veu != null && (veu.actiu || controls)) ReproductorVeu(veu, ajustos) { ajustos = it; it.desa() }
-            AnimatedVisibility(controls && total > 0, enter = fadeIn(), exit = fadeOut()) {
-                BarraPosicio(llista, total, llibre.format.paginat)
+            AnimatedVisibility(controls && nav != null, enter = fadeIn(), exit = fadeOut()) {
+                nav?.let { BarraPosicio(it) }
             }
         }
     }
 
-    if (panellAjustos) PanellAjustos(ajustos, { ajustos = it; it.desa() }) { panellAjustos = false }
-    if (panellIndex) PanellIndex(text?.c?.capitols ?: emptyList(), meves, llista, bib.anotacions) { panellIndex = false }
-    if (miniatures) (estat as? Estat.Pdf)?.let { e -> PanellMiniatures(e.doc, llista.firstVisibleItemIndex, { scope.launch { llista.scrollToItem(it) } }) { miniatures = false } }
+    if (panellAjustos) PanellAjustos(ajustos, esPdf, { ajustos = it; it.desa() }) { panellAjustos = false }
+    if (panellIndex) PanellIndex(text?.c?.capitols ?: emptyList(), meves, blocActual, { b -> scope.launch { nav?.vesABloc(b) } }, bib.anotacions) { panellIndex = false }
+    if (miniatures) (estat as? Estat.Pdf)?.let { e -> PanellMiniatures(e.doc, blocActual, { scope.launch { nav?.vesABloc(it) } }) { miniatures = false } }
     val sel = seleccionat
     val blocSel = sel?.let { text?.c?.blocs?.getOrNull(it) }
     if (sel != null && blocSel != null) PanellCita(
@@ -250,25 +313,6 @@ private fun ReproductorVeu(veu: LectorVeu, a: Ajustos, canvia: (Ajustos) -> Unit
         }
         if (veu.actiu) IconButton({ veu.atura() }) { Icon(Icons.Default.Close, "Atura", tint = Xoriguer.Mut) }
     }
-}
-
-/** Fracció llegida (0..1). Compta també quant s'ha avançat dins del paràgraf de dalt: n'hi ha de molt llargs. */
-private fun percent(l: LazyListState, total: Int): Float {
-    if (total <= 0) return 0f
-    if (!l.canScrollForward) return 1f
-    val primer = l.layoutInfo.visibleItemsInfo.firstOrNull() ?: return 0f
-    val dins = if (primer.size > 0) (l.firstVisibleItemScrollOffset.toFloat() / primer.size).coerceIn(0f, 1f) else 0f
-    return ((l.firstVisibleItemIndex + dins) / total).coerceIn(0f, 1f)
-}
-
-/** Va a una fracció del llibre (inversa de [percent]). */
-private suspend fun anaA(l: LazyListState, total: Int, v: Float) {
-    if (v >= .999f) { l.scrollToItem(total - 1); l.scrollBy(1_000_000f); return }
-    val pos = v * total
-    val index = pos.toInt().coerceIn(0, total - 1)
-    l.scrollToItem(index)
-    val mida = l.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.size ?: 0
-    if (mida > 0) l.scrollBy((pos - index) * mida)
 }
 
 /** Gest de tocar (x en píxels dins de l'element) i de mantenir premut. */
@@ -377,33 +421,32 @@ private fun PanellMiniatures(doc: DocumentPdf, actual: Int, ves: (Int) -> Unit, 
 }
 
 @Composable
-private fun BarraPosicio(llista: LazyListState, total: Int, pdf: Boolean) {
+private fun BarraPosicio(nav: Navegacio) {
     val scope = rememberCoroutineScope()
     var arrossegant by remember { mutableStateOf<Float?>(null) }
-    val actual = arrossegant ?: percent(llista, total)
-    val pagina = arrossegant?.let { (it * total).toInt().coerceIn(0, total - 1) } ?: llista.firstVisibleItemIndex
+    val actual = arrossegant ?: nav.fraccio
+    val etiqueta = arrossegant?.let { v ->
+        if (nav is NavPagines || nav.etiqueta.startsWith("Pàgina")) "Pàgina ${(v * (nav.total - 1)).toInt() + 1} de ${nav.total}" else "${(v * 100).toInt()} %"
+    } ?: nav.etiqueta
     Column(Modifier.fillMaxWidth().background(Xoriguer.Capcalera.copy(alpha = .94f)).windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 16.dp, vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Slider(
                 actual, { arrossegant = it }, Modifier.weight(1f),
                 onValueChangeFinished = {
-                    arrossegant?.let { v -> scope.launch { anaA(llista, total, v) } }
+                    arrossegant?.let { v -> scope.launch { nav.vesAFraccio(v) } }
                     arrossegant = null
                 },
                 colors = SliderDefaults.colors(thumbColor = Xoriguer.Taronja, activeTrackColor = Xoriguer.Taronja, inactiveTrackColor = Xoriguer.Ui3),
             )
             Spacer(Modifier.width(12.dp))
-            Text(
-                if (pdf) "${pagina + 1} / $total" else "${(actual * 100).toInt()} %",
-                color = Xoriguer.Crema, fontSize = 13.sp,
-            )
+            Text(etiqueta, color = Xoriguer.Crema, fontSize = 13.sp)
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PanellAjustos(a: Ajustos, canvia: (Ajustos) -> Unit, tanca: () -> Unit) {
+private fun PanellAjustos(a: Ajustos, esPdf: Boolean, canvia: (Ajustos) -> Unit, tanca: () -> Unit) {
     // fonts de l'usuari: fitxers .ttf/.otf de la carpeta de fonts
     val propies = remember {
         runCatching { Plataforma.llistaFitxers(Plataforma.carpetaFonts(), 2) }.getOrDefault(emptyList())
@@ -411,6 +454,22 @@ private fun PanellAjustos(a: Ajustos, canvia: (Ajustos) -> Unit, tanca: () -> Un
     }
     ModalBottomSheet(tanca, containerColor = Xoriguer.Ui) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScrollSiCal(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Com es llegeix", color = Xoriguer.Mut, fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Opcio("Per pàgines", a.pagines) { canvia(a.copy(pagines = true)) }
+                Opcio("Desplaçament continu", !a.pagines) { canvia(a.copy(pagines = false)) }
+            }
+            if (a.pagines) {
+                Text("Efecte en passar pàgina", color = Xoriguer.Mut, fontSize = 12.sp)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Efecte.entries.forEach { e -> Opcio(e.nom, a.efecte == e) { canvia(a.copy(efecte = e)) } }
+                }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Opcio("Fletxes ‹ ›", a.fletxes) { canvia(a.copy(fletxes = !a.fletxes)) }
+                    Opcio("Botons de volum", a.volum) { canvia(a.copy(volum = !a.volum)) }
+                }
+            }
+            if (esPdf) return@Column
             Text("Tema", color = Xoriguer.Mut, fontSize = 12.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TemaLectura.entries.forEach { t ->
@@ -440,7 +499,7 @@ private fun PanellAjustos(a: Ajustos, canvia: (Ajustos) -> Unit, tanca: () -> Un
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Opcio("Justificat", a.justificat) { canvia(a.copy(justificat = !a.justificat)) }
-                Opcio("Passa pàgina tocant els costats", a.passaPagina) { canvia(a.copy(passaPagina = !a.passaPagina)) }
+                if (!a.pagines) Opcio("Passa pantalla tocant els costats", a.passaPagina) { canvia(a.copy(passaPagina = !a.passaPagina)) }
             }
         }
     }
@@ -465,14 +524,12 @@ private fun Opcio(text: String, actiu: Boolean, onClick: () -> Unit) = Box(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PanellIndex(caps: List<Capitol>, meves: List<Anotacio>, llista: LazyListState, anotacions: Anotacions, tanca: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val actual = llista.firstVisibleItemIndex
+private fun PanellIndex(caps: List<Capitol>, meves: List<Anotacio>, actual: Int, vesA: (Int) -> Unit, anotacions: Anotacions, tanca: () -> Unit) {
     val marcadors = meves.filter { it.tipus == TipusAnotacio.MARCADOR }.sortedBy { it.bloc }
     val cites = meves.filter { it.tipus == TipusAnotacio.CITA }.sortedWith(compareBy({ it.bloc }, { it.inici }))
     var pestanya by remember { mutableStateOf(if (caps.isEmpty()) 1 else 0) }
     var editant by remember { mutableStateOf<Anotacio?>(null) }
-    fun ves(bloc: Int) { scope.launch { llista.scrollToItem(bloc); tanca() } }
+    fun ves(bloc: Int) { vesA(bloc); tanca() }
     ModalBottomSheet(tanca, containerColor = Xoriguer.Ui) {
         PrimaryTabRow(pestanya, containerColor = Xoriguer.Ui, contentColor = Xoriguer.Taronja) {
             listOf("Índex", "Marcadors (${marcadors.size})", "Cites (${cites.size})").forEachIndexed { i, t ->

@@ -4,6 +4,8 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.view.KeyEvent
+import cat.xoriguer.lectura.dades.ControlTecles
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -25,6 +27,18 @@ class MainActivity : ComponentActivity() {
         // "Obre amb…" des d'una altra app (gestor de fitxers, correu…)
         val fitxer = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data?.let { if (it.scheme == "file") it.path else null }
         setContent { App(fitxer) }
+    }
+
+    // Botons de volum = passar pàgina (si el lector està obert i l'opció activada)
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        val amunt = when (keyCode) { KeyEvent.KEYCODE_VOLUME_UP -> true; KeyEvent.KEYCODE_VOLUME_DOWN -> false; else -> null }
+        if (amunt != null && ControlTecles.volum?.invoke(amunt) == true) return true
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if ((keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) && ControlTecles.volum != null) return true
+        return super.onKeyUp(keyCode, event)
     }
 
     override fun onResume() {

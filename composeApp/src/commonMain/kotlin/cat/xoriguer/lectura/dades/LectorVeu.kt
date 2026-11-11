@@ -59,3 +59,6 @@ class LectorVeu(private val blocs: List<Bloc>, private val idioma: String, priva
         if (ControlVeu.atura == ::atura) ControlVeu.atura = null
     }
 }
+
+/** Tecles de fora de la pantalla (botons de volum a Android). `volum(amunt)` torna true si l'ha fet servir. */
+object ControlTecles { var volum: ((Boolean) -> Boolean)? = null }
