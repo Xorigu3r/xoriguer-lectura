@@ -24,8 +24,10 @@ import androidx.compose.ui.unit.sp
 import cat.xoriguer.lectura.dades.Llibre
 import cat.xoriguer.lectura.res.Res
 import cat.xoriguer.lectura.res.icona
+import cat.xoriguer.lectura.res.montserrat_extrabold
 import cat.xoriguer.lectura.tema.Xoriguer
 import org.jetbrains.compose.resources.ExperimentalResourceApi
+import org.jetbrains.compose.resources.Font
 import org.jetbrains.compose.resources.decodeToImageBitmap
 import org.jetbrains.compose.resources.painterResource
 
@@ -41,7 +43,8 @@ fun Capcalera(accions: @Composable RowScope.() -> Unit = {}) {
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 // Mai partit en línies: si no hi cap, es retalla (amb la mida de lletra gran del mòbil)
-                Text("LECTURA", color = Xoriguer.Crema, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, fontSize = 20.sp, lineHeight = 20.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                // Títol: Montserrat ExtraBold (norma de la marca Xoriguer, 12/11/2026)
+                Text("LECTURA", color = Xoriguer.Crema, fontFamily = FontFamily(Font(Res.font.montserrat_extrabold, FontWeight.ExtraBold)), fontWeight = FontWeight.ExtraBold, fontStyle = FontStyle.Italic, fontSize = 20.sp, lineHeight = 20.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
                 Text("X O R I G U E R", color = Xoriguer.Taronja, fontWeight = FontWeight.Bold, fontSize = 10.sp, lineHeight = 11.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
             }
             accions()

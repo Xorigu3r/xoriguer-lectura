@@ -5,6 +5,9 @@
 #      i les icones de cada plataforma (Android, Windows, iOS) dins de composeApp/.
 import os, collections
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import sys as _sys
+_sys.path.insert(0, 'C:/Users/Xorigu3r/Documents/LOGOS-XORIGUER/_eines')
+import marca  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'empaquetar', 'logo', 'xoriguer-original.webp')
@@ -147,12 +150,9 @@ def compose(with_text=True, size=1200, margin=0.0):
     b = bird(); bw = int(inner * (0.86 if with_text else 0.98)); b = b.resize((bw, round(b.size[1] * bw / b.size[0])), Image.LANCZOS)
     lay.alpha_composite(b, (int(inner / 2 - bw / 2 - inner * 0.02), int(inner * (0.04 if with_text else 0.05))))
     if with_text:
-        d = ImageDraw.Draw(lay)
-        f1 = ImageFont.truetype('C:/Windows/Fonts/seguibli.ttf', int(inner * 0.135))
-        f2 = ImageFont.truetype('C:/Windows/Fonts/bahnschrift.ttf', int(inner * 0.048))
-        f2.set_variation_by_name('Bold')
-        text(d, (inner / 2, inner * 0.815), 'LECTURA', f1, CREAM)
-        text(d, (inner / 2, inner * 0.925), 'XORIGUER', f2, ORANGE, spacing=int(inner * 0.028))
+        # Rètol de la marca (LOGOS-XORIGUER/_eines/marca.py): títol Montserrat ExtraBold, text Segoe UI
+        rt = marca.rotul('LECTURA', 'XORIGUER', amplada=inner * 0.74, max_cap=inner * 0.105)
+        marca.enganxa(lay, rt, inner / 2, inner * 0.862 - rt.height / 2)
     cv.alpha_composite(lay, (off, off))
     return cv
 
