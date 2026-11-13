@@ -11,8 +11,8 @@ plugins {
 }
 
 // La versió de l'app es canvia només aquí (Android, Windows i l'avís de versions noves la llegeixen d'aquí)
-val versioApp = "0.6.1"
-val codiVersio = 9 // +1 a cada versió (si no, Android no deixa actualitzar)
+val versioApp = "0.7.0"
+val codiVersio = 10 // +1 a cada versió (si no, Android no deixa actualitzar)
 
 /** Genera Versio.kt amb la versió, perquè l'app sàpiga quina és sense escriure-la dues vegades. */
 val generaVersio by tasks.registering {

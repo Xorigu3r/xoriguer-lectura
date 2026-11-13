@@ -18,6 +18,7 @@ class Biblioteca {
     var carpetes by mutableStateOf(llegeixCarpetes()); private set
     val anotacions = Anotacions()
     val diccionari = Diccionari()
+    val estadistiques = Estadistiques()
     val progres = mutableStateMapOf<String, Progres>().apply { putAll(llegeixProgres()) }
 
     /** Cerca tots els llibres de les carpetes i en llegeix les metadades. */
@@ -46,9 +47,67 @@ class Biblioteca {
                 }
             }
             llibres = amb
+            // Empremta de cada llibre (només es calcula si el fitxer és nou o ha canviat)
+            val ids = withContext(Dispatchers.Default) {
+                llibres.associate { l ->
+                    val ara = identitats[l.cami]
+                    l.cami to (ara?.takeIf { it.mida == l.mida && it.modificat == l.modificat }?.id ?: Empremta.de(l.cami, l.mida))
+                }
+            }
+            llibres = llibres.map { l -> ids[l.cami]?.let { l.copy(id = it) } ?: l }
+            for (l in llibres) l.id?.let { identitats[l.cami] = Identitat(it, l.mida, l.modificat) }
+            recuperaMoguts()
+            desaIdentitats()
         } finally {
             escanejant = false
         }
+    }
+
+    // ---------- Empremtes: llibres moguts o reanomenats fora de l'app ----------
+    /** camí → empremta. Es guarden també les dels fitxers que ja no hi són però tenen dades (per poder-los recuperar). */
+    private val identitats: MutableMap<String, Identitat> = llegeixIdentitats()
+
+    /** Camins que tenen progrés, cites o col·leccions. */
+    private fun caminsAmbDades(): Set<String> = progres.keys + anotacions.totes.map { it.cami } + colleccions.values.flatten()
+
+    /**
+     * Si un llibre amb dades ha desaparegut del seu lloc i ara hi ha un fitxer amb la mateixa empremta en un altre
+     * lloc (que encara no té dades), les dades hi passen: progrés, cites, notes, marcadors i col·leccions.
+     * Torna quants llibres s'han recuperat.
+     */
+    fun recuperaMoguts(): Int {
+        val presents = llibres.associateBy { it.cami }
+        val perId = llibres.filter { it.id != null }.groupBy { it.id!! }
+        val ambDades = caminsAmbDades()
+        var n = 0
+        for (vell in ambDades) {
+            if (vell in presents || Plataforma.existeix(vell)) continue
+            val id = identitats[vell]?.id ?: continue
+            val nou = perId[id]?.firstOrNull { it.cami !in ambDades }?.cami ?: continue
+            migra(vell, nou); n++
+        }
+        return n
+    }
+
+    /** Empremta d'un camí (per a la sincronització). */
+    fun empremtaDe(cami: String): String? = identitats[cami]?.id
+
+    /** Camí local del llibre amb aquesta empremta, si n'hi ha. */
+    fun camiDeEmpremta(id: String): String? = llibres.firstOrNull { it.id == id }?.cami
+
+    private fun llegeixIdentitats(): MutableMap<String, Identitat> {
+        val m = LinkedHashMap<String, Identitat>()
+        Plataforma.llegeixDada("identitats.tsv")?.lines()?.forEach { l ->
+            val p = l.split('\t'); if (p.size >= 4) m[p[0]] = Identitat(p[1], p[2].toLongOrNull() ?: 0, p[3].toLongOrNull() ?: 0)
+        }
+        return m
+    }
+
+    private fun desaIdentitats() {
+        // es guarden les dels fitxers presents i les dels que no hi són però encara tenen dades
+        val presents = llibres.map { it.cami }.toSet(); val ambDades = caminsAmbDades()
+        identitats.keys.retainAll { it in presents || it in ambDades }
+        Plataforma.desaDada("identitats.tsv", identitats.entries.joinToString("\n") { (c, i) -> "$c\t${i.id}\t${i.mida}\t${i.modificat}" })
     }
 
     /** Afegeix un fitxer concret (p. ex. un llibre que s'acaba de baixar) sense tornar a escanejar-ho tot. */
@@ -116,9 +175,16 @@ class Biblioteca {
     private fun canviaCami(l: Llibre, nou: String) {
         val nom = nou.substringAfterLast('/').substringAfterLast('\\')
         llibres = llibres.map { if (it.cami == l.cami) it.copy(cami = nou, nomFitxer = nom) else it }
-        progres.remove(l.cami)?.let { progres[nou] = it; desaProgresTot() }
-        anotacions.canviaCami(l.cami, nou)
-        if (colleccions.values.any { l.cami in it }) canviaColleccions { m -> m.mapValues { (_, c) -> if (l.cami in c) c - l.cami + nou else c } }
+        identitats.remove(l.cami)?.let { identitats[nou] = it; desaIdentitats() }
+        migra(l.cami, nou)
+    }
+
+    /** Passa totes les dades d'un camí a un altre (el fitxer s'ha mogut o reanomenat). */
+    private fun migra(vell: String, nou: String) {
+        progres.remove(vell)?.let { progres[nou] = it; desaProgresTot() }
+        anotacions.canviaCami(vell, nou)
+        if (colleccions.values.any { vell in it }) canviaColleccions { m -> m.mapValues { (_, c) -> if (vell in c) c - vell + nou else c } }
+        estadistiques.canviaCami(vell, nou)
     }
 
     private fun desaProgresTot() = Plataforma.desaDada("progres.tsv", progres.entries.joinToString("\n") { (k, p) ->
@@ -147,6 +213,8 @@ class Biblioteca {
     fun desaProgres(l: Llibre, posicio: Int, desplacament: Int, percent: Float) {
         progres[l.cami] = Progres(posicio, desplacament, percent.coerceIn(0f, 1f), Clock.System.now().toEpochMilliseconds())
         desaProgresTot()
+        // arribar al final compta com a llibre acabat (per a les estadístiques)
+        if (percent >= .99f) estadistiques.marcaAcabat(l)
     }
 
     private fun llegeixCarpetes(): List<String> =

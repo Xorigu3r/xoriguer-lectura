@@ -38,8 +38,18 @@ data class Anotacio(
     val color: ColorCita,
     val data: Long,
     val percent: Float,
+    /** Paràgraf on acaba la cita (si passa d'un paràgraf a un altre; `fi` és dins d'aquest). */
+    val blocFi: Int = bloc,
 ) {
     val teNota get() = nota.isNotBlank()
+
+    /** Tros d'aquesta cita dins del paràgraf `b` (de `llarg` caràcters), o null si no hi arriba. */
+    fun trosA(b: Int, llarg: Int): IntRange? {
+        if (b < bloc || b > blocFi) return null
+        val a = if (b == bloc) inici else 0
+        val f = if (b == blocFi) fi else llarg
+        return if (a < f) a until f else null
+    }
 
     @OptIn(ExperimentalTime::class)
     fun dataCurta(): String {
@@ -61,12 +71,12 @@ class Anotacions(private val fitxer: String? = "anotacions.tsv") {
     @OptIn(ExperimentalTime::class)
     fun nova(
         llibre: Llibre, tipus: TipusAnotacio, bloc: Int, inici: Int, fi: Int, text: String,
-        color: ColorCita = ColorCita.GROC, nota: String = "", percent: Float = 0f,
+        color: ColorCita = ColorCita.GROC, nota: String = "", percent: Float = 0f, blocFi: Int = bloc,
     ): Anotacio {
         val ara = Clock.System.now().toEpochMilliseconds()
         val a = Anotacio(
             "$ara-${Random.nextInt(0, 1 shl 30).toString(36)}", llibre.cami, llibre.titol, llibre.autor,
-            tipus, bloc, inici, fi, text, nota, color, ara, percent,
+            tipus, bloc, inici, fi, text, nota, color, ara, percent, blocFi.coerceAtLeast(bloc),
         )
         totes += a; desa(); return a
     }
@@ -109,7 +119,7 @@ class Anotacions(private val fitxer: String? = "anotacions.tsv") {
 
         fun aLinia(a: Anotacio) = listOf(
             a.id, a.cami, a.titolLlibre, a.autor ?: "", a.tipus.name, a.bloc, a.inici, a.fi,
-            a.text, a.nota, a.color.name, a.data, a.percent,
+            a.text, a.nota, a.color.name, a.data, a.percent, a.blocFi,
         ).joinToString("\t") { esc(it.toString()) }
 
         fun deLinia(l: String): Anotacio? = runCatching {
@@ -118,6 +128,7 @@ class Anotacions(private val fitxer: String? = "anotacions.tsv") {
             Anotacio(
                 p[0], p[1], p[2], p[3].ifEmpty { null }, TipusAnotacio.valueOf(p[4]), p[5].toInt(), p[6].toInt(), p[7].toInt(),
                 p[8], p[9], ColorCita.valueOf(p[10]), p[11].toLong(), p[12].toFloat(),
+                p.getOrNull(13)?.toIntOrNull() ?: p[5].toInt(), // les cites d'abans de la 0.7 són d'un sol paràgraf
             )
         }.getOrNull()
 

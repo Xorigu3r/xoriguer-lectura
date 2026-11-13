@@ -98,6 +98,16 @@ actual object Plataforma {
         override fun atura() {}
     }
 
+    actual fun extrems(cami: String, mida: Int): Pair<ByteArray, ByteArray>? = runCatching {
+        val b = llegeix(cami); val k = minOf(mida, b.size)
+        b.copyOfRange(0, k) to b.copyOfRange(b.size - k, b.size)
+    }.getOrNull()
+
+    actual fun diaLocal(): Int {
+        val segons = NSDate().timeIntervalSince1970 + NSTimeZone.localTimeZone.secondsFromGMT.toDouble()
+        return kotlin.math.floor(segons / 86400.0).toInt()
+    }
+
     actual fun obreWeb(url: String) {
         NSURL.URLWithString(url)?.let { UIApplication.sharedApplication.openURL(it, emptyMap<Any?, Any>(), null) }
     }

@@ -77,6 +77,8 @@ actual object Plataforma {
     actual fun esborra(cami: String): Boolean = Jvm.esborra(cami)
     actual fun font(cami: String): FontFamily? = runCatching { FontFamily(Font(File(cami))) }.getOrNull()
     actual val veu: Veu = VeuWindows
+    actual fun extrems(cami: String, mida: Int): Pair<ByteArray, ByteArray>? = Jvm.extrems(cami, mida)
+    actual fun diaLocal(): Int = Jvm.diaLocal()
     actual fun obreWeb(url: String) { runCatching { Desktop.getDesktop().browse(URI(url)) } }
 }
 

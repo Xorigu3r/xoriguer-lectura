@@ -53,4 +53,15 @@ internal object Jvm {
     }
 
     fun esborra(cami: String) = File(cami).delete()
+
+    fun extrems(cami: String, mida: Int): Pair<ByteArray, ByteArray>? = runCatching {
+        java.io.RandomAccessFile(cami, "r").use { f ->
+            val n = f.length(); val k = minOf(mida.toLong(), n).toInt()
+            val a = ByteArray(k); f.readFully(a)
+            val b = ByteArray(k); f.seek(n - k); f.readFully(b)
+            a to b
+        }
+    }.getOrNull()
+
+    fun diaLocal(): Int = java.time.LocalDate.now().toEpochDay().toInt()
 }

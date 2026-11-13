@@ -152,6 +152,7 @@ fun BibliotecaPantalla(bib: Biblioteca, ves: (Seccio) -> Unit, obre: (Llibre) ->
                             Op("Ordena: ${prefs.ordre.nom.lowercase()}", Icons.Default.Sort) { menuOrdre = true }
                         }
                         Op(prefs.grup.nom, Icons.Default.Workspaces) { menuGrup = true }
+                        Op("Estadístiques", Icons.Default.BarChart) { ves(Seccio.ESTADISTIQUES) }
                         Op("Diccionari", Icons.Default.Translate) { ves(Seccio.DICCIONARI) }
                         Op("Llibres duplicats", Icons.Default.ContentCopy) { ves(Seccio.DUPLICATS) }
                         Op("Carpetes", Icons.Default.Folder) { carpetesObert = true }

@@ -65,6 +65,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.mutableLongStateOf
 import kotlinx.coroutines.withContext
 
 /** Preferències de lectura (es desen a lector.txt). `font`: "serif", "sans" o el camí d'un fitxer .ttf/.otf. */
@@ -178,10 +180,17 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
     val navLlista = remember(llista, total, esPdf) { NavLlista(llista, total, esPdf) }
     val nav: Navegacio? = if (total == 0) null else if (perPagines) navPagines else navLlista
 
+
     val meves = bib.anotacions.totes.filter { it.cami == llibre.cami }
     // les cites, i a més el resultat de la cerca ressaltat com si fos una cita taronja
-    val citesPerBloc = remember(meves, troballa) {
-        val m = meves.filter { it.tipus == TipusAnotacio.CITA }.groupBy { it.bloc }
+    val citesPerBloc = remember(meves, troballa, text) {
+        val blocs = text?.c?.blocs
+        val m = meves.filter { it.tipus == TipusAnotacio.CITA }.flatMap { a ->
+            (a.bloc..a.blocFi).mapNotNull { b ->
+                val llarg = blocs?.getOrNull(b)?.text?.length ?: return@mapNotNull null
+                a.trosA(b, llarg)?.let { r -> a.copy(bloc = b, inici = r.first, fi = r.last + 1, blocFi = b) }
+            }
+        }.groupBy { it.bloc }
         troballa?.let { t ->
             val marca = Anotacio("cerca", llibre.cami, "", null, TipusAnotacio.CITA, t.bloc, t.ini, t.fi, "", "", ColorCita.TARONJA, 0, 0f)
             m + (t.bloc to (m[t.bloc].orEmpty() + marca))
@@ -192,6 +201,24 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
 
     // Lectura en veu alta
     val veu = remember(text) { text?.let { LectorVeu(it.c.blocs, it.idioma, llibre.titol) } }
+    // Estadístiques: el temps només compta si hi ha hagut activitat fa poc (llibre obert i oblidat = no compta)
+    var ultimaActivitat by remember { mutableLongStateOf(araMs()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15_000)
+            if (araMs() - ultimaActivitat < 3 * 60_000 || veu?.actiu == true) bib.estadistiques.afegeixTemps(llibre.cami, 15)
+        }
+    }
+    // cada pàgina passada (o cada paràgraf nou a dalt, en el mode continu) és activitat; en mode pàgines, compta una pàgina
+    var paginaAnterior by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(nav?.actual) {
+        val a = nav?.actual ?: return@LaunchedEffect
+        val ant = paginaAnterior
+        paginaAnterior = a
+        if (ant == null || ant == a) return@LaunchedEffect
+        ultimaActivitat = araMs()
+        if (perPagines) bib.estadistiques.afegeixPagina()
+    }
     DisposableEffect(veu) { onDispose { veu?.atura() } }
     LaunchedEffect(ajustos.velocitatVeu, veu) { veu?.velocitat = ajustos.velocitatVeu }
     LaunchedEffect(veu?.index, veu?.actiu, nav) {
@@ -215,6 +242,7 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
 
     // Tocar: costats = passar pàgina, centre = mostrar/amagar els controls
     fun toca(x: Float) {
+        ultimaActivitat = araMs()
         val costats = perPagines || ajustos.passaPagina
         if (controls || !costats || x in 0.3f..0.7f) { controls = !controls; return }
         if (x > .5f) endavant() else enrere()
@@ -300,10 +328,10 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
     if (miniatures) (estat as? Estat.Pdf)?.let { e -> PanellMiniatures(e.doc, blocActual, { scope.launch { nav?.vesABloc(it) } }) { miniatures = false } }
     val sel = seleccionat?.first
     val blocSel = sel?.let { text?.c?.blocs?.getOrNull(it) }
-    if (sel != null && blocSel != null) PanellCita(
-        blocSel.text, meves.filter { it.bloc == sel },
-        desa = { a, b, color, nota ->
-            bib.anotacions.nova(llibre, TipusAnotacio.CITA, sel, a, b, blocSel.text.substring(a, b), color, nota, sel.toFloat() / (total - 1).coerceAtLeast(1))
+    if (sel != null && blocSel != null && text != null) PanellCita(
+        text.c.blocs.map { it.text }, sel, meves.filter { it.tipus == TipusAnotacio.CITA && sel in it.bloc..it.blocFi },
+        desa = { bi, oi, bf, of, t, color, nota ->
+            bib.anotacions.nova(llibre, TipusAnotacio.CITA, bi, oi, of, t, color, nota, bi.toFloat() / (total - 1).coerceAtLeast(1), blocFi = bf)
         },
         actualitza = bib.anotacions::actualitza,
         esborra = bib.anotacions::esborra,
@@ -609,3 +637,6 @@ private fun PanellIndex(caps: List<Capitol>, meves: List<Anotacio>, actual: Int,
 
 @Composable
 private fun Buidet(t: String) = Text(t, color = Xoriguer.Mut, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(24.dp))
+
+@OptIn(kotlin.time.ExperimentalTime::class)
+private fun araMs(): Long = kotlin.time.Clock.System.now().toEpochMilliseconds()

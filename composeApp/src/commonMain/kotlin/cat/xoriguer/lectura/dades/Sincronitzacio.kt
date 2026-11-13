@@ -24,11 +24,16 @@ object Sincronitzacio {
     fun sincronitza(bib: Biblioteca): String {
         val c = carpeta ?: return "No hi ha cap carpeta triada."
         Plataforma.creaCarpeta("$c/$SUBCARPETA")
-        // Els camins dels llibres canvien d'un dispositiu a l'altre: es busca el fitxer pel nom
+        // Els camins dels llibres canvien d'un dispositiu a l'altre: es reconeixen per l'empremta del contingut
+        // (identitats.tsv de l'altre dispositiu) i, si no, pel nom del fitxer
         val perNom = bib.llibres.associateBy { it.nomFitxer.lowercase() }
+        val empremtesRemotes = llegeixRemot("identitats.tsv")?.lines()?.mapNotNull { l ->
+            val p = l.split('\t'); if (p.size >= 2) p[0] to p[1] else null
+        }?.toMap().orEmpty()
         fun local(cami: String): String =
             if (bib.llibres.any { it.cami == cami }) cami
-            else perNom[cami.substringAfterLast('/').substringAfterLast('\\').lowercase()]?.cami ?: cami
+            else empremtesRemotes[cami]?.let(bib::camiDeEmpremta)
+                ?: perNom[cami.substringAfterLast('/').substringAfterLast('\\').lowercase()]?.cami ?: cami
 
         var nous = 0
 
@@ -62,6 +67,11 @@ object Sincronitzacio {
         afegeixColl(Plataforma.llegeixDada("colleccions.tsv"), false)
         afegeixColl(llegeixRemot("colleccions.tsv"), true)
         desaTot("colleccions.tsv", coll.entries.joinToString("\n") { (n, s) -> if (s.isEmpty()) n else s.joinToString("\n") { "$n\t$it" } })
+
+        // Empremtes d'aquest dispositiu, perquè els altres puguin reconèixer els llibres
+        // (s'hi sumen les dels altres dispositius: cada camí amb la seva empremta)
+        val totes = empremtesRemotes + bib.llibres.mapNotNull { l -> l.id?.let { l.cami to it } }
+        Plataforma.escriu(remot("identitats.tsv"), totes.entries.joinToString("\n") { (c, id) -> "$c\t$id" }.encodeToByteArray())
 
         // Diccionari i catàlegs: unió de línies
         for (f in listOf("diccionari.tsv", "cataleg.tsv")) {

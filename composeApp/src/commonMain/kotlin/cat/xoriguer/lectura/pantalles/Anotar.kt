@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -120,9 +121,13 @@ fun Colors(actual: ColorCita?, mida: Int = 34, tria: (ColorCita) -> Unit) {
 @Suppress("DEPRECATION")
 @Composable
 fun PanellCita(
-    text: String,
+    /** Tots els paràgrafs del llibre (per poder allargar la cita a l'anterior o al següent). */
+    paragrafs: List<String>,
+    /** Paràgraf on s'ha mantingut premut. */
+    blocInicial: Int,
     existents: List<Anotacio>,
-    desa: (inici: Int, fi: Int, color: ColorCita, nota: String) -> Unit,
+    /** (paràgraf on comença, caràcter, paràgraf on acaba, caràcter, text, color, nota) */
+    desa: (blocIni: Int, inici: Int, blocFi: Int, fi: Int, text: String, color: ColorCita, nota: String) -> Unit,
     actualitza: (Anotacio) -> Unit,
     esborra: (Anotacio) -> Unit,
     buscaParaula: ((String) -> Unit)? = null,
@@ -132,7 +137,38 @@ fun PanellCita(
     tanca: () -> Unit,
 ) {
     val porta = LocalClipboardManager.current
-    var valor by remember(text) { mutableStateOf(TextFieldValue(text, paraulaA(text, puntInicial) ?: TextRange(0, text.length))) }
+    // tros de paràgrafs que es mostren (es pot allargar), separats per una línia en blanc
+    var desDe by remember { mutableIntStateOf(blocInicial) }
+    var finsA by remember { mutableIntStateOf(blocInicial) }
+    val sep = "\n\n"
+    var valor by remember {
+        val t = paragrafs[blocInicial]
+        mutableStateOf(TextFieldValue(t, paraulaA(t, puntInicial) ?: TextRange(0, t.length)))
+    }
+    val text = valor.text
+    /** Inici de cada paràgraf mostrat dins de `text`. */
+    fun inicis(): List<Int> { var x = 0; return (desDe..finsA).map { b -> x.also { x += paragrafs[b].length + sep.length } } }
+    /** Caràcter de `text` → (paràgraf, caràcter dins del paràgraf). */
+    fun aParagraf(o: Int, esFinal: Boolean): Pair<Int, Int> {
+        val ii = inicis()
+        var k = ii.indexOfLast { it <= o }.coerceAtLeast(0)
+        // un final just a l'inici d'un paràgraf vol dir el final de l'anterior
+        if (esFinal && k > 0 && o - ii[k] <= 0) { k--; return (desDe + k) to paragrafs[desDe + k].length }
+        val b = desDe + k
+        return b to (o - ii[k]).coerceIn(0, paragrafs[b].length)
+    }
+    fun afegeixAnterior() {
+        if (desDe <= 0) return
+        val afegit = paragrafs[desDe - 1].length + sep.length
+        desDe--
+        val nou = paragrafs[desDe] + sep + valor.text
+        valor = TextFieldValue(nou, TextRange(valor.selection.start + afegit, valor.selection.end + afegit))
+    }
+    fun afegeixSeguent() {
+        if (finsA >= paragrafs.lastIndex) return
+        finsA++
+        valor = valor.copy(text = valor.text + sep + paragrafs[finsA])
+    }
     var color by remember { mutableStateOf(ColorCita.GROC) }
     var nota by remember { mutableStateOf("") }
     var ambNota by remember { mutableStateOf(false) }
@@ -146,8 +182,13 @@ fun PanellCita(
     ModalBottomSheet(tanca, containerColor = Xoriguer.Ui) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Selecciona el tros que vols guardar", color = Xoriguer.Mut, fontSize = 12.sp)
+            // allargar la cita a l'altre paràgraf (una cita pot ocupar-ne uns quants)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (desDe > 0) TextButton({ afegeixAnterior() }) { Text("↑ Afegeix el paràgraf anterior", color = Xoriguer.Crema, fontSize = 13.sp) }
+                if (finsA < paragrafs.lastIndex) TextButton({ afegeixSeguent() }) { Text("↓ Afegeix el següent", color = Xoriguer.Crema, fontSize = 13.sp) }
+            }
             BasicTextField(
-                valor, { valor = it.copy(text = text) }, readOnly = true,
+                valor, { valor = it.copy(text = valor.text) }, readOnly = true,
                 textStyle = TextStyle(color = Xoriguer.Txt, fontFamily = FontFamily.Serif, fontSize = 17.sp, lineHeight = 25.sp),
                 cursorBrush = SolidColor(Xoriguer.Taronja),
                 modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp).background(Xoriguer.Fons, RoundedCornerShape(8.dp)).padding(12.dp)
@@ -171,7 +212,11 @@ fun PanellCita(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(
-                    { val (a, b) = rang(); desa(a, b, color, nota.trim()); tanca() },
+                    {
+                        val (a, b) = rang()
+                        val (bi, oi) = aParagraf(a, false); val (bf, of) = aParagraf(b, true)
+                        desa(bi, oi, bf, of, text.substring(a, b).trim(), color, nota.trim()); tanca()
+                    },
                     colors = ButtonDefaults.buttonColors(Xoriguer.Taronja, Xoriguer.Fons),
                 ) { Icon(Icons.Default.FormatQuote, null); Spacer(Modifier.width(6.dp)); Text(if (ambNota && nota.isNotBlank()) "Desa la nota" else "Ressalta", fontWeight = FontWeight.Bold) }
                 if (!ambNota) OutlinedButton({ ambNota = true }) { Icon(Icons.Default.EditNote, null, tint = Xoriguer.Crema); Spacer(Modifier.width(6.dp)); Text("Nota", color = Xoriguer.Crema) }

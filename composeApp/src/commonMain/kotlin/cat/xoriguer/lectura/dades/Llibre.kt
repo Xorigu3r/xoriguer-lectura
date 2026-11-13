@@ -34,6 +34,8 @@ data class Llibre(
     val autor: String?,
     val serie: String? = null,
     val portada: ByteArray? = null,
+    /** Empremta del contingut (vegeu `Empremta`); null fins que s'ha calculat. */
+    val id: String? = null,
 )
 
 /** On és l'usuari dins d'un llibre. */

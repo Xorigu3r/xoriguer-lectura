@@ -14,7 +14,7 @@ import kotlinx.coroutines.withContext
 object EnTornar { var accio: (() -> Unit)? = null }
 
 /** Seccions de l'app (a més del lector). */
-enum class Seccio { BIBLIOTECA, CITES, GRATUITS, DICCIONARI, DUPLICATS }
+enum class Seccio { BIBLIOTECA, CITES, GRATUITS, DICCIONARI, DUPLICATS, ESTADISTIQUES }
 
 private fun nomDeCami(cami: String) = cami.substringAfterLast('/').substringAfterLast('\\')
 
@@ -69,6 +69,7 @@ fun App(fitxerInicial: String? = null, seccioInicial: Seccio = Seccio.BIBLIOTECA
                 Seccio.GRATUITS -> GratuitsPantalla(bib, obre = { obreLlibre(it) }, enrere = enrere)
                 Seccio.DICCIONARI -> DiccionariPantalla(bib.diccionari, enrere = enrere)
                 Seccio.DUPLICATS -> DuplicatsPantalla(bib, obre = { obreLlibre(it) }, enrere = enrere)
+                Seccio.ESTADISTIQUES -> EstadistiquesPantalla(bib, obre = { obreLlibre(it) }, enrere = enrere)
             }
         }
     }

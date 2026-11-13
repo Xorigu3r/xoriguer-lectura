@@ -1,5 +1,6 @@
 package cat.xoriguer.lectura.pantalles
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -52,6 +53,12 @@ fun FitxaLlibre(l: Llibre, bib: Biblioteca, obre: (Llibre) -> Unit, tanca: () ->
                 }
             }
             Text(l.cami, color = Xoriguer.Mut, fontSize = 11.sp)
+            // marcar-lo com a llegit (compta a les estadístiques com a llibre acabat)
+            val acabat = bib.estadistiques.estaAcabat(l.cami)
+            Row(Modifier.fillMaxWidth().clickable { if (acabat) bib.estadistiques.desmarcaAcabat(l.cami) else bib.estadistiques.marcaAcabat(l) }, verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(acabat, null, colors = CheckboxDefaults.colors(checkedColor = Xoriguer.Taronja, checkmarkColor = Xoriguer.Fons))
+                Text("L'he acabat de llegir", color = Xoriguer.Txt, fontSize = 14.sp)
+            }
             Button({ obre(l) }, colors = ButtonDefaults.buttonColors(Xoriguer.Taronja, Xoriguer.Fons), modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.AutoMirrored.Filled.MenuBook, null); Spacer(Modifier.width(8.dp)); Text("Llegeix", fontWeight = FontWeight.Bold)
             }

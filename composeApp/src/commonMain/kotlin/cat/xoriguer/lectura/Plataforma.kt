@@ -71,6 +71,12 @@ expect object Plataforma {
 
     /** Obre una adreça al navegador. */
     fun obreWeb(url: String)
+
+    /** Primers i últims bytes d'un fitxer (per fer-ne l'empremta sense llegir-lo sencer). */
+    fun extrems(cami: String, mida: Int): Pair<ByteArray, ByteArray>?
+
+    /** Dia d'avui segons el rellotge i la zona horària del dispositiu (dies des de l'1-1-1970). */
+    fun diaLocal(): Int
 }
 
 /** Motor de veu. `parla` diu un tros de text i crida `fet` quan acaba (o `fet(false)` si s'ha aturat o ha fallat). */

@@ -4,7 +4,7 @@ Lector de llibres electrònics gratuït i de codi obert per a **Android, Windows
 
 ![logo](empaquetar/logo/logo-1200.png)
 
-## Què fa (versió 0.5)
+## Què fa (versió 0.7)
 **Formats:** EPUB, PDF, Kindle (MOBI, AZW, AZW3 sense DRM), FB2, Word (DOCX), LibreOffice (ODT), RTF, TXT i còmics CBZ i CBR (els CBR comprimits amb RAR, no).
 
 **Biblioteca**
@@ -24,9 +24,14 @@ Lector de llibres electrònics gratuït i de codi obert per a **Android, Windows
 - **Tipografia de llibre:** sagnat a la primera línia i, a Android, paraules partides amb guionet (català i castellà).
 - **Cercar dins del llibre**, sense haver de posar els accents.
 - **Lectura en veu alta**, també en segon pla i amb la pantalla bloquejada (Android).
-- **Cites** amb 6 colors, **notes** i **marcadors**. La secció «Cites i notes» les recull de tots els llibres.
-- **Diccionari** (Viquidiccionari / Wiktionary). La secció «Diccionari» recull totes les paraules buscades.
+- **Cites** amb 6 colors (també de diversos paràgrafs seguits), **notes** i **marcadors**. La secció «Cites i notes» les recull de tots els llibres.
+- **Diccionari** (Viquidiccionari / Wiktionary), també per a formes verbals i paraules amb pronoms. La secció «Diccionari» recull totes les paraules buscades.
+- **Ajust automàtic** de la lletra i els marges a la pantalla.
 - **Miniatures de les pàgines** als PDF i còmics.
+
+**Estadístiques:** temps de lectura per dia, pàgines, dies seguits, objectiu diari i llibres acabats.
+
+**Els llibres es reconeixen pel contingut:** si en canvies el nom o el mous a una altra carpeta (fora de l'app), conserva el progrés, les cites i les col·leccions.
 
 **Còpia i sincronització:** desa el progrés, les cites, les col·leccions i el diccionari en una carpeta que el núvol ja sincronitzi (Google Drive per a ordinador, Dropbox, OneDrive…). Es combinen les dades de tots els dispositius.
 
