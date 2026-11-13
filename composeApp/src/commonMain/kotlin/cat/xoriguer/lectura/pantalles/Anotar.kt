@@ -37,6 +37,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import cat.xoriguer.lectura.opcioMenuText
 import cat.xoriguer.lectura.dades.Anotacio
 import cat.xoriguer.lectura.dades.ColorCita
 import cat.xoriguer.lectura.dades.TipusAnotacio
@@ -83,6 +85,19 @@ fun DrawScope.pintaCites(layout: TextLayoutResult?, cites: List<Anotacio>, tema:
     }
 }
 
+/** La paraula que hi ha al caràcter `i` (lletres, xifres, punt volat i guionet; l'apòstrof separa: «l'estufa» → «estufa»). */
+fun paraulaA(text: String, i: Int?): TextRange? {
+    if (i == null || text.isEmpty()) return null
+    fun lletra(c: Char) = c.isLetterOrDigit() || c == '·' || c == '-'
+    var a = i.coerceIn(0, text.length - 1)
+    if (!lletra(text[a]) && a > 0 && lletra(text[a - 1])) a--
+    if (!lletra(text[a])) return null
+    var b = a
+    while (a > 0 && lletra(text[a - 1])) a--
+    while (b < text.length && lletra(text[b])) b++
+    return TextRange(a, b)
+}
+
 /** Selector de colors (cercles). */
 @Composable
 fun Colors(actual: ColorCita?, mida: Int = 34, tria: (ColorCita) -> Unit) {
@@ -112,10 +127,12 @@ fun PanellCita(
     esborra: (Anotacio) -> Unit,
     buscaParaula: ((String) -> Unit)? = null,
     llegeixDesDaqui: (() -> Unit)? = null,
+    /** Caràcter on s'ha mantingut premut: se selecciona la paraula d'allà (si no, tot el paràgraf). */
+    puntInicial: Int? = null,
     tanca: () -> Unit,
 ) {
     val porta = LocalClipboardManager.current
-    var valor by remember(text) { mutableStateOf(TextFieldValue(text, TextRange(0, text.length))) }
+    var valor by remember(text) { mutableStateOf(TextFieldValue(text, paraulaA(text, puntInicial) ?: TextRange(0, text.length))) }
     var color by remember { mutableStateOf(ColorCita.GROC) }
     var nota by remember { mutableStateOf("") }
     var ambNota by remember { mutableStateOf(false) }
@@ -133,8 +150,20 @@ fun PanellCita(
                 valor, { valor = it.copy(text = text) }, readOnly = true,
                 textStyle = TextStyle(color = Xoriguer.Txt, fontFamily = FontFamily.Serif, fontSize = 17.sp, lineHeight = 25.sp),
                 cursorBrush = SolidColor(Xoriguer.Taronja),
-                modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp).background(Xoriguer.Fons, RoundedCornerShape(8.dp)).padding(12.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp).background(Xoriguer.Fons, RoundedCornerShape(8.dp)).padding(12.dp)
+                    // «Diccionari» també al menú del sistema (al costat de Copia / Tradueix)
+                    .then(if (buscaParaula != null) Modifier.opcioMenuText("Diccionari") {
+                        val (a, b) = rang(); text.substring(a, b).trim().takeIf { it.isNotEmpty() }?.let { buscaParaula(it); tanca() }
+                    } else Modifier),
             )
+            // Diccionari ben a la vista quan hi ha seleccionada una paraula (o una expressió curta)
+            val (a0, b0) = rang()
+            val tros = text.substring(a0, b0).trim()
+            if (buscaParaula != null && !valor.selection.collapsed && tros.isNotEmpty() && tros.split(Regex("\\s+")).size <= 3)
+                FilledTonalButton({ buscaParaula(tros); tanca() }, Modifier.fillMaxWidth()) {
+                    Icon(Icons.AutoMirrored.Filled.MenuBook, null); Spacer(Modifier.width(8.dp))
+                    Text("Diccionari: «$tros»", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             Colors(color) { color = it }
             if (ambNota) OutlinedTextField(
                 nota, { nota = it }, Modifier.fillMaxWidth(), label = { Text("Nota") }, minLines = 2,
@@ -149,11 +178,6 @@ fun PanellCita(
                 IconButton({ val (a, b) = rang(); porta.setText(AnnotatedString(text.substring(a, b))); tanca() }) {
                     Icon(Icons.Default.ContentCopy, "Copia", tint = Xoriguer.Crema)
                 }
-                // Diccionari: només si s'ha seleccionat una paraula (o una expressió curta)
-                val (a0, b0) = rang()
-                val tros = text.substring(a0, b0).trim()
-                if (buscaParaula != null && !valor.selection.collapsed && tros.isNotEmpty() && tros.split(Regex("\\s+")).size <= 3)
-                    IconButton({ buscaParaula(tros); tanca() }) { Icon(Icons.Default.Translate, "Diccionari", tint = Xoriguer.Crema) }
                 if (llegeixDesDaqui != null) IconButton({ llegeixDesDaqui(); tanca() }) { Icon(Icons.Default.Headphones, "Llegeix en veu alta des d'aquí", tint = Xoriguer.Crema) }
             }
             if (buscaParaula != null && valor.selection.collapsed)

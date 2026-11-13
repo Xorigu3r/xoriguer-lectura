@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
         Plataforma.demanaCarpeta = { d -> esperantCarpeta = d; triaCarpeta.launch(null) }
         // "Obre amb…" des d'una altra app (gestor de fitxers, correu…)
         val fitxer = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data?.let { if (it.scheme == "file") it.path else null }
+        activaMenuText() // per poder afegir «Diccionari» al menú de text del sistema
         setContent { App(fitxer) }
     }
 

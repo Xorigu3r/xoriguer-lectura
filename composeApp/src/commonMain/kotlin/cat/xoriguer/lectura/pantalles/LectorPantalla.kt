@@ -88,8 +88,10 @@ data class Ajustos(
     val guionat: Boolean = true,
     /** Dues pàgines (llibre obert) quan la pantalla és ampla i apaïsada. */
     val duesPagines: Boolean = true,
+    /** Lletra, marges i interlineat triats sols segons la pantalla (es desactiva en tocar-los a mà). */
+    val auto: Boolean = true,
 ) {
-    fun desa() = Plataforma.desaDada("lector.txt", listOf(mida, interlineat, marge, font, tema.name, justificat, passaPagina, velocitatVeu, pagines, efecte.name, fletxes, volum, sagnat, guionat, duesPagines).joinToString("\n"))
+    fun desa() = Plataforma.desaDada("lector.txt", listOf(mida, interlineat, marge, font, tema.name, justificat, passaPagina, velocitatVeu, pagines, efecte.name, fletxes, volum, sagnat, guionat, duesPagines, auto).joinToString("\n"))
 
     companion object {
         fun carrega(): Ajustos {
@@ -105,6 +107,7 @@ data class Ajustos(
                 s(8)?.toBooleanStrictOrNull() ?: d.pagines, s(9)?.let { runCatching { Efecte.valueOf(it) }.getOrNull() } ?: d.efecte,
                 s(10)?.toBooleanStrictOrNull() ?: d.fletxes, s(11)?.toBooleanStrictOrNull() ?: d.volum,
                 s(12)?.toBooleanStrictOrNull() ?: d.sagnat, s(13)?.toBooleanStrictOrNull() ?: d.guionat, s(14)?.toBooleanStrictOrNull() ?: d.duesPagines,
+                s(15)?.toBooleanStrictOrNull() ?: d.auto,
             )
         }
     }
@@ -134,7 +137,7 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
     var panellAjustos by remember { mutableStateOf(false) }
     var panellIndex by remember { mutableStateOf(false) }
     var miniatures by remember { mutableStateOf(false) }
-    var seleccionat by remember { mutableStateOf<Int?>(null) }
+    var seleccionat by remember { mutableStateOf<Pair<Int, Int?>?>(null) }
     var paraula by remember { mutableStateOf<String?>(null) }
     var cercant by remember { mutableStateOf(false) }
     var textCercat by remember { mutableStateOf("") }
@@ -243,9 +246,9 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
             is Estat.Error -> Text(e.missatge, Modifier.align(Alignment.Center).padding(32.dp), color = tema.text, textAlign = TextAlign.Center)
             is Estat.Text ->
                 if (perPagines) MarcPagines(nav, tema, ajustos.fletxes, capitol, ::enrere, ::endavant) {
-                    TextPaginat(e.c, ajustos, e.idioma, citesPerBloc, veu?.takeIf { it.actiu }?.index, posicio, { navPagines = it }, { seleccionat = it }, ::toca)
+                    TextPaginat(e.c, ajustos, e.idioma, citesPerBloc, veu?.takeIf { it.actiu }?.index, posicio, { navPagines = it }, { b, c -> seleccionat = b to c }, ::toca)
                 }
-                else TextLlibre(e.c, llista, ajustos, citesPerBloc, veu?.takeIf { it.actiu }?.index, { seleccionat = it }, ::toca)
+                else TextLlibre(e.c, llista, ajustos, citesPerBloc, veu?.takeIf { it.actiu }?.index, { seleccionat = it to null }, ::toca)
             is Estat.Pdf ->
                 if (perPagines) MarcPagines(nav, tema, ajustos.fletxes, null, ::enrere, ::endavant) {
                     DocumentPaginat(e.doc, ajustos, posicio.first, { navPagines = it }, ::toca)
@@ -295,7 +298,7 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
     if (panellAjustos) PanellAjustos(ajustos, esPdf, { ajustos = it; it.desa() }) { panellAjustos = false }
     if (panellIndex) PanellIndex(text?.c?.capitols ?: emptyList(), meves, blocActual, { b -> scope.launch { nav?.vesABloc(b) } }, bib.anotacions) { panellIndex = false }
     if (miniatures) (estat as? Estat.Pdf)?.let { e -> PanellMiniatures(e.doc, blocActual, { scope.launch { nav?.vesABloc(it) } }) { miniatures = false } }
-    val sel = seleccionat
+    val sel = seleccionat?.first
     val blocSel = sel?.let { text?.c?.blocs?.getOrNull(it) }
     if (sel != null && blocSel != null) PanellCita(
         blocSel.text, meves.filter { it.bloc == sel },
@@ -306,6 +309,7 @@ fun LectorPantalla(llibre: Llibre, bib: Biblioteca, anarA: Int? = null, tanca: (
         esborra = bib.anotacions::esborra,
         buscaParaula = { paraula = it },
         llegeixDesDaqui = if (veu != null && Plataforma.veu.disponible) ({ veu.comenca(sel) }) else null,
+        puntInicial = seleccionat?.second,
     ) { seleccionat = null }
     if (cercant && text != null) PanellCerca(
         text.c, text.c.capitols, navPagines?.let { n -> { t: Troballa -> n.numPagina(t.bloc, t.ini) } }, textCercat,
@@ -512,9 +516,13 @@ private fun PanellAjustos(a: Ajustos, esPdf: Boolean, canvia: (Ajustos) -> Unit,
                     }
                 }
             }
-            Fila("Mida de la lletra", "${a.mida.toInt()}") { Slider(a.mida, { canvia(a.copy(mida = it)) }, valueRange = 12f..34f, colors = colorsSlider()) }
-            Fila("Interlineat", ((a.interlineat * 100).toInt() / 100.0).toString()) { Slider(a.interlineat, { canvia(a.copy(interlineat = it)) }, valueRange = 1.1f..2.2f, colors = colorsSlider()) }
-            Fila("Marges", "${a.marge}") { Slider(a.marge.toFloat(), { canvia(a.copy(marge = it.toInt())) }, valueRange = 4f..64f, colors = colorsSlider()) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Opcio("Ajust automàtic a la pantalla", a.auto) { canvia(a.copy(auto = !a.auto)) }
+            }
+            if (a.auto) Text("La lletra, els marges i l'interlineat s'ajusten sols a aquesta pantalla. Si en tocues un, es passa a ajust manual.", color = Xoriguer.Mut, fontSize = 11.sp)
+            Fila("Mida de la lletra", if (a.auto) "auto" else "${a.mida.toInt()}") { Slider(a.mida, { canvia(a.copy(mida = it, auto = false)) }, valueRange = 12f..34f, colors = colorsSlider()) }
+            Fila("Interlineat", if (a.auto) "auto" else ((a.interlineat * 100).toInt() / 100.0).toString()) { Slider(a.interlineat, { canvia(a.copy(interlineat = it, auto = false)) }, valueRange = 1.1f..2.2f, colors = colorsSlider()) }
+            Fila("Marges", if (a.auto) "auto" else "${a.marge}") { Slider(a.marge.toFloat(), { canvia(a.copy(marge = it.toInt(), auto = false)) }, valueRange = 4f..64f, colors = colorsSlider()) }
             Text("Tipus de lletra", color = Xoriguer.Mut, fontSize = 12.sp)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Opcio("Serif", a.font == "serif") { canvia(a.copy(font = "serif")) }

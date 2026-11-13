@@ -44,28 +44,50 @@ class Diccionari(private val fitxer: String? = "diccionari.tsv") {
 
     companion object {
         private val NOMS = mapOf("ca" to "Català", "es" to "Español", "en" to "English", "fr" to "Français", "it" to "Italiano", "pt" to "Português")
+        /** Seccions que no s'ensenyen (pronúncia, traduccions...). Sinònims i antònims sí, que ajuden a entendre-la. */
         private val FORA = Regex(
             "(Pronúncia|Etimologia|Etimología|Etymology|Pronunciation|Derivats|Compostos|Traduccions|Traducciones|Translations|Miscel·lània|Vegeu també|" +
-                "Véase también|See also|Locuciones|Referencias|Referències|Sinònims|Sinónimos|Synonyms|Anagrames|Anagrams|Variants|Informació|Información|Notes|Further reading)",
+                "Véase también|See also|Locuciones|Referencias|Referències|Anagrames|Anagrams|Informació|Información|Notes|Further reading|Relacionats|Hipònims|Hiperònims)",
+            RegexOption.IGNORE_CASE,
+        )
+        private val UTILS = Regex("(Sinònims|Sinónimos|Synonyms|Antònims|Antónimos|Antonyms|Variants)", RegexOption.IGNORE_CASE)
+        /** Línies que no diuen res del significat. */
+        private val SOROLL = Regex("^(Pronúncia|Etimologia|Etimología|Rimes|Rima|Síl·labes|Sílabas|Separació|Anagrames|Homòfons|Parònims|Accentuació|Pronunciación|Etymology|Rhymes|Syllab)", RegexOption.IGNORE_CASE)
+        /** "Forma femenina de malastruc", "Plural de casa", "Tercera persona del singular ... de cantar" → la paraula base. */
+        private val REMISSIO = Regex(
+            "^(?:Forma|Plural|Femení|Femenino|Masculí|Masculino|Primera|Segunda|Segona|Tercera|Participi|Participio|Gerundi|Gerundio|Infinitiu|Imperatiu|Feminine|Plural of|Inflection|Variant)" +
+                "[^.]*?\\b(?:de|del|d'|of)\\s+([\\p{L}·'-]+)\\.?\\s*$",
             RegexOption.IGNORE_CASE,
         )
 
-        /** Busca la definició. Prova la paraula tal com és i en minúscules. Null si no hi és. */
+        private suspend fun extracte(paraula: String, idioma: String): String? {
+            val url = "https://$idioma.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&titles=" +
+                paraula.encodeToByteArray().joinToString("") { b -> val c = b.toInt() and 0xFF; if (c.toChar().isLetterOrDigit() && c < 128) c.toChar().toString() else "%" + c.toString(16).padStart(2, '0').uppercase() }
+            val j = Json.llegeix(Plataforma.descarrega(url).decodeToString())
+            return j.obj("query").obj("pages")?.values?.firstNotNullOfOrNull { it.text("extract") }
+        }
+
+        /**
+         * Busca la definició. Prova la paraula tal com és i en minúscules. Si només diu que és una forma d'una altra
+         * paraula (femení, plural, temps verbal…), hi afegeix la definició de la paraula base. Null si no hi és.
+         */
         suspend fun busca(paraula: String, idioma: String): String? {
             val net = paraula.trim().trim { !it.isLetter() && it != '·' && it != '-' && it != '\'' }
             if (net.isEmpty()) return null
             for (p in listOf(net, net.lowercase()).distinct()) {
-                val url = "https://$idioma.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&titles=" +
-                    p.encodeToByteArray().joinToString("") { b -> val c = b.toInt() and 0xFF; if (c.toChar().isLetterOrDigit() && c < 128) c.toChar().toString() else "%" + c.toString(16).padStart(2, '0').uppercase() }
-                val j = Json.llegeix(Plataforma.descarrega(url).decodeToString())
-                val pagines = j.obj("query").obj("pages") ?: continue
-                val extracte = pagines.values.firstNotNullOfOrNull { it.text("extract") } ?: continue
-                neteja(extracte, idioma)?.let { return it }
+                val d = extracte(p, idioma)?.let { neteja(it, idioma) } ?: continue
+                val base = paraulaBase(d)?.takeIf { !it.equals(p, true) } ?: return d
+                val db = runCatching { extracte(base, idioma)?.let { neteja(it, idioma) } }.getOrNull() ?: return d
+                return d + "\n◆ $base\n" + db
             }
             return null
         }
 
-        /** Es queda amb la secció de l'idioma i en treu pronúncia, traduccions, etc. */
+        /** La paraula base si la definició és una remissió ("Forma femenina de malastruc"). */
+        fun paraulaBase(definicio: String): String? =
+            definicio.lines().firstNotNullOfOrNull { REMISSIO.find(it.trim())?.groupValues?.get(1) }
+
+        /** Es queda amb la secció de l'idioma i en treu pronúncia, traduccions, rimes, etc. */
         fun neteja(extracte: String, idioma: String): String? {
             val nom = NOMS[idioma]
             val linies = extracte.lines()
@@ -74,18 +96,21 @@ class Diccionari(private val fitxer: String? = "diccionari.tsv") {
             val sortida = mutableListOf<String>()
             var salta = false
             for (l in tros) {
-                val t = l.trim()
+                // fora caràcters invisibles (marques de direcció) que deixaven línies "buides"
+                val t = l.replace(Regex("[\u200e\u200f\u202a-\u202e]"), "").trim()
                 val cap = Regex("^(=+)\\s*(.*?)\\s*=+$").find(t)
                 if (cap != null) {
                     val nivell = cap.groupValues[1].length; val titol = cap.groupValues[2]
-                    salta = nivell >= 4 || FORA.containsMatchIn(titol)
+                    salta = FORA.containsMatchIn(titol) || (nivell >= 4 && !UTILS.containsMatchIn(titol))
                     if (!salta) sortida += "■ $titol"
                     continue
                 }
-                if (salta || t.isEmpty() || t.startsWith("Pronúncia") || t.startsWith("Etimologia")) continue
+                if (salta || t.isEmpty() || SOROLL.containsMatchIn(t)) continue
                 sortida += t
             }
-            return sortida.joinToString("\n").trim().takeIf { it.length > 3 }
+            // un títol sense res a sota no serveix
+            val net = sortida.filterIndexed { i, l -> !(l.startsWith("■") && (i == sortida.lastIndex || sortida[i + 1].startsWith("■"))) }
+            return net.joinToString("\n").trim().takeIf { it.length > 3 }
         }
     }
 }

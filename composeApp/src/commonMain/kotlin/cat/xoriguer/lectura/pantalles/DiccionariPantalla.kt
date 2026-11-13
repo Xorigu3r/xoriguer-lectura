@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -43,9 +44,10 @@ fun DialegDiccionari(paraula: String, idiomaLlibre: String, llibre: String, dic:
         title = { Text(paraula, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold) },
         text = {
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // amb scroll: al mòbil no hi caben els quatre idiomes i l'últim quedava esclafat (feia un forat enorme)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     NOM_IDIOMA.forEach { (codi, nom) ->
-                        FilterChip(idioma == codi, { idioma = codi }, { Text(nom, fontSize = 12.sp) }, border = null,
+                        FilterChip(idioma == codi, { idioma = codi }, { Text(nom, fontSize = 12.sp, maxLines = 1, softWrap = false) }, border = null,
                             colors = FilterChipDefaults.filterChipColors(containerColor = Xoriguer.Ui2, selectedContainerColor = Xoriguer.Taronja, selectedLabelColor = Xoriguer.Fons))
                     }
                 }
@@ -79,7 +81,11 @@ fun DialegDiccionari(paraula: String, idiomaLlibre: String, llibre: String, dic:
 @Composable
 private fun TextDefinicio(d: String) = Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
     d.lines().forEach { l ->
-        if (l.startsWith("■ ")) Text(l.removePrefix("■ "), color = Xoriguer.Taronja, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        // ◆ = la paraula base (quan la buscada només és una forma seva: femení, plural, temps verbal…)
+        if (l.startsWith("◆ ")) {
+            HorizontalDivider(color = Xoriguer.Ui3, modifier = Modifier.padding(top = 10.dp))
+            Text(l.removePrefix("◆ "), color = Xoriguer.Crema, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 6.dp))
+        } else if (l.startsWith("■ ")) Text(l.removePrefix("■ "), color = Xoriguer.Taronja, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
         else Text(l, color = Xoriguer.Txt, fontSize = 14.sp, lineHeight = 20.sp)
     }
 }

@@ -2,6 +2,7 @@ package cat.xoriguer.lectura.pantalles
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
@@ -329,18 +330,24 @@ fun MarcPagines(
     nav: Navegacio?, tema: TemaLectura, fletxes: Boolean, capitol: String?, onAnterior: () -> Unit, onSeguent: () -> Unit,
     contingut: @Composable BoxScope.() -> Unit,
 ) {
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val estret = maxWidth < 600.dp
         contingut()
-        if (nav != null && fletxes) {
+        if (nav != null && fletxes && !estret) {
             if (nav.actual > 0) BotoFletxa(Modifier.align(Alignment.CenterStart), Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Pàgina anterior", tema, onAnterior)
             if (nav.actual < nav.total - 1) BotoFletxa(Modifier.align(Alignment.CenterEnd), Icons.AutoMirrored.Filled.KeyboardArrowRight, "Pàgina següent", tema, onSeguent)
         }
         if (nav != null) Row(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 20.dp, vertical = 6.dp),
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(capitol.orEmpty(), color = tema.suau, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(nav.etiqueta, color = tema.suau, fontSize = 12.sp)
+            // al mòbil, les fletxes al peu, al costat del número de pàgina
+            if (fletxes && estret) Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Pàgina anterior", tint = tema.suau,
+                modifier = Modifier.size(28.dp).clickable(enabled = nav.actual > 0, onClick = onAnterior))
+            Text(nav.etiqueta, color = tema.suau, fontSize = 12.sp, maxLines = 1, modifier = Modifier.padding(horizontal = 4.dp))
+            if (fletxes && estret) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Pàgina següent", tint = tema.suau,
+                modifier = Modifier.size(28.dp).clickable(enabled = nav.actual < nav.total - 1, onClick = onSeguent))
         }
     }
 }
@@ -355,25 +362,35 @@ private fun BotoFletxa(m: Modifier, icona: androidx.compose.ui.graphics.vector.I
 @Composable
 fun TextPaginat(
     c: Contingut, a: Ajustos, idioma: String, cites: Map<Int, List<Anotacio>>, llegint: Int?,
-    inicial: Pair<Int, Int>, nav: (NavPagines?) -> Unit, mantePremut: (Int) -> Unit, toca: (Float) -> Unit,
+    inicial: Pair<Int, Int>, nav: (NavPagines?) -> Unit, mantePremut: (Int, Int?) -> Unit, toca: (Float) -> Unit,
 ) {
     val m = rememberTextMeasurer(cacheSize = 0)
     val familia = remember(a.font) { familiaDe(a.font) }
-    // per mesurar només compta el que canvia la mida del text; el color (tema) només es fa servir per dibuixar
-    val mesura = remember(a.mida, a.interlineat, a.justificat, a.sagnat, a.guionat, familia, idioma) { EstilsPagina(a, familia, Color.Black, idioma) }
-    val estils = remember(mesura, a.tema) { EstilsPagina(a, familia, a.tema.text, idioma) }
     val densitat = LocalDensity.current
+    // les barres del sistema (hora a dalt, botons a baix): el text no hi pot anar a sota
+    val sistema = WindowInsets.systemBars
+    val daltSist = with(densitat) { sistema.getTop(densitat).toDp() }
+    val baixSist = with(densitat) { sistema.getBottom(densitat).toDp() }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val ampleTot = constraints.maxWidth.toFloat()
         // Llibre obert: dues pàgines quan la pantalla és ampla i apaïsada (ordinador, tauleta o mòbil girat)
         val doble = a.duesPagines && maxWidth > maxHeight && maxWidth >= 840.dp
         val perFull = if (doble) 2 else 1
         val ampleFull = maxWidth / perFull
-        val margeLat = a.marge.dp + if (doble) 28.dp else 36.dp // espai per a les fletxes
-        val maxAmple = (a.mida * 44).dp
+        // Al mòbil les fletxes van al peu de pàgina (no es reserva espai als costats)
+        val estret = ampleFull < 600.dp
+        // Ajust automàtic: lletra i marges segons la pantalla (es calcula aquí perquè depèn de l'amplada)
+        val ef = if (a.auto) ajustAutomatic(a, ampleFull, densitat.fontScale, estret) else a
+        val margeLat = ef.marge.dp + if (estret) 0.dp else if (doble) 28.dp else 36.dp
+        val maxAmple = (ef.mida * 44).dp
         val ampleText = (ampleFull - margeLat * 2).coerceAtMost(maxAmple).coerceAtLeast(120.dp)
-        val dalt = 40.dp; val baix = 40.dp
+        // a baix hi ha el peu (capítol i número de pàgina): el text no l'ha de trepitjar mai
+        val dalt = 20.dp + daltSist
+        val baix = 18.dp + (12 * densitat.fontScale).dp + 12.dp + baixSist
         val altText = (maxHeight - dalt - baix).coerceAtLeast(120.dp)
+        // per mesurar només compta el que canvia la mida del text; el color (tema) només es fa servir per dibuixar
+        val mesura = remember(ef.mida, ef.interlineat, ef.justificat, ef.sagnat, ef.guionat, familia, idioma) { EstilsPagina(ef, familia, Color.Black, idioma) }
+        val estils = remember(mesura, ef.tema) { EstilsPagina(ef, familia, ef.tema.text, idioma) }
         val ampPx = with(densitat) { ampleText.roundToPx() }
         val altPx = with(densitat) { altText.roundToPx() } - 6 // marge per arrodoniments
         // es tornen a fer les pàgines si canvia la mida de la pantalla o la lletra
@@ -424,7 +441,11 @@ fun TextPaginat(
                                 .pointerInput(t.bloc, xFull) {
                                     detectTapGestures(
                                         onTap = { o -> toca((xFull + (ampleFull.toPx() - size.width) / 2f + o.x) / ampleTot) },
-                                        onLongPress = { mantePremut(t.bloc) },
+                                        onLongPress = { o ->
+                                            // caràcter de l'original on s'ha mantingut premut (per seleccionar-hi la paraula)
+                                            val d = layout?.getOffsetForPosition(o)
+                                            mantePremut(t.bloc, d?.let { x -> g?.original(hIni + x) ?: (t.ini + x) })
+                                        },
                                     )
                                 },
                         )
@@ -469,11 +490,24 @@ fun DocumentPaginat(doc: DocumentPdf, a: Ajustos, inicial: Int, nav: (NavPagines
                 contentAlignment = Alignment.Center,
             ) {
                 val img by produceState<ImageBitmap?>(null, p, ample) { value = doc.pagina(p, ample) }
-                img?.let { Image(it, "Pàgina ${p + 1}", Modifier.fillMaxSize().padding(bottom = 28.dp), contentScale = ContentScale.Fit) }
+                img?.let { Image(it, "Pàgina ${p + 1}", Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).padding(bottom = 30.dp), contentScale = ContentScale.Fit) }
                     ?: CircularProgressIndicator(color = a.tema.suau)
             }
         }
     }
+}
+
+/**
+ * Ajust automàtic a la pantalla: tria la mida de lletra perquè hi càpiguen unes 36-60 lletres per línia
+ * (el que es considera còmode per llegir) i uns marges proporcionats a l'amplada.
+ */
+fun ajustAutomatic(a: Ajustos, ample: androidx.compose.ui.unit.Dp, escalaLletra: Float, estret: Boolean): Ajustos {
+    val w = ample.value
+    val marge = when { w < 400 -> 16; w < 600 -> 22; w < 900 -> 40; else -> 52 }
+    val text = w - 2 * marge - if (estret) 0 else 72
+    // una lletra fa, de mitjana, uns 0,52 em d'amplada; l'escala de lletra del sistema ja l'aplica Android als sp
+    val mida = (text / (0.52f * if (estret) 36f else 60f) / escalaLletra).coerceIn(15f, 22f)
+    return a.copy(mida = mida, marge = marge, interlineat = if (estret) 1.45f else 1.55f)
 }
 
 /** Títol del capítol on és un paràgraf. */

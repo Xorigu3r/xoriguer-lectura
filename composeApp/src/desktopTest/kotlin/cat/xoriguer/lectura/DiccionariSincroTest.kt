@@ -71,3 +71,28 @@ class DiccionariSincroTest {
         dir.deleteRecursively(); nuvol.deleteRecursively()
     }
 }
+
+class DiccionariBaseTest {
+    private val malastruga = "\n== Català ==\nPronúncia(i): oriental /mə.ɫəsˈtɾu.ɣə/\nRimes: -uɡa\n\n\n=== Adjectiu ===\nmal·as·tru·ga f. ‎(plural malastrugues)\n\nForma femenina de malastruc.\n\n\n=== Miscel·lània ===\nSíl·labes: mal·as·tru·ga (4)"
+
+    @Test fun treuSoroll() {
+        val d = kotlin.test.assertNotNull(Diccionari.neteja(malastruga, "ca"))
+        assertEquals("■ Adjectiu\nmal·as·tru·ga f. (plural malastrugues)\nForma femenina de malastruc.", d)
+    }
+
+    @Test fun paraulaBase() {
+        assertEquals("malastruc", Diccionari.paraulaBase("■ Adjectiu\nForma femenina de malastruc."))
+        assertEquals("cantar", Diccionari.paraulaBase("Tercera persona del singular (ell, ella, vostè) del present d'indicatiu de cantar."))
+        assertEquals("niebla", Diccionari.paraulaBase("Forma del plural de niebla."))
+        assertEquals(null, Diccionari.paraulaBase("Fenomen atmosfèric de núvols baixos."))
+    }
+
+    /** Amb el Viquidiccionari de veritat (XARXA=1): «malastruga» ha de portar també el significat de «malastruc». */
+    @Test fun seguixLaBase() = kotlinx.coroutines.runBlocking {
+        if (System.getenv("XARXA") != "1") return@runBlocking
+        val d = kotlin.test.assertNotNull(Diccionari.busca("malastruga", "ca"))
+        println("DICCIONARI malastruga:\n$d")
+        assertTrue("Que té desgràcia" in d, d)
+        assertTrue("Rimes" !in d, d)
+    }
+}

@@ -8,11 +8,14 @@ import cat.xoriguer.lectura.res.Res
 import cat.xoriguer.lectura.res.icona
 import org.jetbrains.compose.resources.painterResource
 
-fun main(args: Array<String>) = application {
-    Window(
-        onCloseRequest = ::exitApplication,
-        title = "Lectura · Xoriguer",
-        icon = painterResource(Res.drawable.icona),
-        state = rememberWindowState(width = 1100.dp, height = 800.dp),
-    ) { App(args.firstOrNull { !it.startsWith("--") }, args.firstNotNullOfOrNull { a -> Seccio.entries.firstOrNull { "--${it.name.lowercase()}" == a } } ?: Seccio.BIBLIOTECA) }
+fun main(args: Array<String>) {
+    activaMenuText() // per poder afegir «Diccionari» al menú de text
+    application {
+        Window(
+            onCloseRequest = ::exitApplication,
+            title = "Lectura · Xoriguer",
+            icon = painterResource(Res.drawable.icona),
+            state = rememberWindowState(width = 1100.dp, height = 800.dp),
+        ) { App(args.firstOrNull { !it.startsWith("--") }, args.firstNotNullOfOrNull { a -> Seccio.entries.firstOrNull { "--${it.name.lowercase()}" == a } } ?: Seccio.BIBLIOTECA) }
+    }
 }
