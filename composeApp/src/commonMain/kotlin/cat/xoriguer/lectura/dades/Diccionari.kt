@@ -72,13 +72,25 @@ class Diccionari(private val fitxer: String? = "diccionari.tsv") {
          * paraula (femení, plural, temps verbal…), hi afegeix la definició de la paraula base. Null si no hi és.
          */
         suspend fun busca(paraula: String, idioma: String): String? {
-            val net = paraula.trim().trim { !it.isLetter() && it != '·' && it != '-' && it != '\'' }
+            val net = paraula.trim().replace('’', '\'').trim { !it.isLetter() && it != '·' && it != '-' && it != '\'' }
             if (net.isEmpty()) return null
-            for (p in listOf(net, net.lowercase()).distinct()) {
+            // «refent-les» → «refent», «l'estufa» → «estufa»
+            val sense = Lemes.senseClitics(net)
+            val provar = listOf(net, net.lowercase(), sense, sense.lowercase()).distinct()
+            for (p in provar) {
                 val d = extracte(p, idioma)?.let { neteja(it, idioma) } ?: continue
                 val base = paraulaBase(d)?.takeIf { !it.equals(p, true) } ?: return d
                 val db = runCatching { extracte(base, idioma)?.let { neteja(it, idioma) } }.getOrNull() ?: return d
                 return d + "\n◆ $base\n" + db
+            }
+            // El Viquidiccionari no té gaires formes verbals (refent, refeia…): es busca la paraula base a les
+            // taules de Softcatalà (les mateixes del joc Paraules) i se'n dona la definició
+            for (p in listOf(sense.lowercase(), net.lowercase()).distinct()) {
+                for (base in runCatching { Lemes.bases(p, idioma) }.getOrDefault(emptyList())) {
+                    if (base.equals(p, true)) continue
+                    val db = runCatching { extracte(base, idioma)?.let { neteja(it, idioma) } }.getOrNull() ?: continue
+                    return "«$p» és una forma de «$base».\n◆ $base\n" + db
+                }
             }
             return null
         }

@@ -96,3 +96,31 @@ class DiccionariBaseTest {
         assertTrue("Rimes" !in d, d)
     }
 }
+
+class LemesTest {
+    @Test fun clitics() {
+        assertEquals("refent", cat.xoriguer.lectura.dades.Lemes.senseClitics("refent-les"))
+        assertEquals("dóna", cat.xoriguer.lectura.dades.Lemes.senseClitics("dóna-m'ho"))
+        assertEquals("estufa", cat.xoriguer.lectura.dades.Lemes.senseClitics("l'estufa"))
+        assertEquals("posar", cat.xoriguer.lectura.dades.Lemes.senseClitics("posar-se-les"))
+        assertEquals("porta-veu", cat.xoriguer.lectura.dades.Lemes.senseClitics("porta-veu")) // «veu» no és un pronom
+    }
+
+    @Test fun clauComParaules() {
+        // «beirutina» és al tros 010408 (B=01, E=04, I=08) de Paraules
+        val c = kotlin.test.assertNotNull(cat.xoriguer.lectura.dades.Lemes.codifica("beirutina", "ca"))
+        assertEquals("010408", cat.xoriguer.lectura.dades.Lemes.clau(c))
+        // NY, L·L i QU compten com una sola lletra; els accents no compten
+        assertEquals(cat.xoriguer.lectura.dades.Lemes.codifica("canya", "ca")!!.size, 4)
+        assertEquals(cat.xoriguer.lectura.dades.Lemes.codifica("pàl·lid", "ca"), cat.xoriguer.lectura.dades.Lemes.codifica("pal·lid", "ca"))
+    }
+
+    /** Amb xarxa (XARXA=1): «refent-les» ha de donar el significat de «refer». */
+    @Test fun refentLes() = kotlinx.coroutines.runBlocking {
+        if (System.getenv("XARXA") != "1") return@runBlocking
+        assertEquals(listOf("refer"), cat.xoriguer.lectura.dades.Lemes.bases("refent", "ca"))
+        val d = kotlin.test.assertNotNull(Diccionari.busca("refent-les", "ca"))
+        println("DICCIONARI refent-les:\n$d")
+        assertTrue("Tornar a fer" in d, d)
+    }
+}
