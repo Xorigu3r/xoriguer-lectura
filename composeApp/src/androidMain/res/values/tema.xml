@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="lectura_fons">#1E2A3B</color>
+    <!-- Tema de l'app: fons Blau pissarra mentre arrenca (abans, negre/blanc segons el mòbil) -->
+    <style name="LecturaTema" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/lectura_fons</item>
+    </style>
+</resources>

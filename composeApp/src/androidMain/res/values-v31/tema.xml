@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+: pantalla d'inici amb fons Blau pissarra i el llibre nítid (sense falcó) -->
+    <style name="LecturaTema" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/lectura_fons</item>
+        <item name="android:windowSplashScreenBackground">@color/lectura_fons</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icona</item>
+    </style>
+</resources>
