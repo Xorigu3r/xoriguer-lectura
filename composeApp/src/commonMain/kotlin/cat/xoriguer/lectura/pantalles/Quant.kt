@@ -95,7 +95,7 @@ fun DialegQuantA(tanca: () -> Unit, trobada: (VersioNova) -> Unit) {
                 nova?.let { v -> Button({ Plataforma.obreWeb(v.baixada) }, colors = ButtonDefaults.buttonColors(Xoriguer.Taronja, Xoriguer.Fons)) { Text("Baixa la ${v.versio}", fontWeight = FontWeight.Bold) } }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton({ Plataforma.obreWeb("https://github.com/${Actualitzacions.REPO}") }) { Text("Codi font", color = Xoriguer.Mut) }
-                    TextButton({ Plataforma.obreWeb("https://xorigu3r.github.io/") }) { Text("Altres apps Xoriguer", color = Xoriguer.Mut) }
+                    TextButton({ Plataforma.obreWeb("https://xoriguer.dev/") }) { Text("Altres apps Xoriguer", color = Xoriguer.Mut) }
                 }
             }
         },

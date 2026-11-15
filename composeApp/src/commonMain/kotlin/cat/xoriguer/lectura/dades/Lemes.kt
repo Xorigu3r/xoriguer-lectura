@@ -8,7 +8,7 @@ import cat.xoriguer.lectura.Plataforma
  * es baixa només el tros de la paraula que es busca. Cal connexió.
  */
 object Lemes {
-    private const val WEB = "https://xorigu3r.github.io/paraules/dades/lemes"
+    private const val WEB = "https://xoriguer.dev/paraules/dades/lemes"   // abans xorigu3r.github.io (GitHub suspès)
     private val ALFA = mapOf("ca" to "ABCDEFGHIJLMNOPQRSTUVXZÇŁŊ", "es" to "ABCDEFGHIJKLMNÑOPQRSTUVWXYZ")
     private val trossos = mutableMapOf<String, List<Pair<String, String>>>()
 

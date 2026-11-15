@@ -29,14 +29,22 @@ class ActualitzacionsTest {
         assertEquals("https://github.com/x/y/releases/tag/v0.5.0", Actualitzacions.deRelease(json, "iOS")!!.baixada)
     }
 
-    /** Amb el servidor de veritat (XARXA=1): la darrera Release publicada s'ha de poder llegir. */
-    @Test fun releaseDeVeritat() = runBlocking {
-        if (System.getenv("XARXA") != "1") return@runBlocking
-        val json = Plataforma.descarrega("https://api.github.com/repos/${Actualitzacions.REPO}/releases/latest").decodeToString()
-        val r = assertNotNull(Actualitzacions.deRelease(json, "Android"))
-        println("Darrera Release: ${r.versio} -> ${r.baixada}")
-        assertTrue(r.baixada.endsWith("LecturaXoriguer.apk"))
-        // la instal·lada (VERSIO_APP) és la que s'està preparant, més nova que la publicada
-        assertFalse(Actualitzacions.esMesNova(r.versio, VERSIO_APP))
+    @Test fun versioJsonDeXoriguerDev() {
+        val json = """{"versio": "0.7.1", "url": "https://baixades.xoriguer.dev/LecturaXoriguer-Instalador.msi", "sha256": "AB",
+            "apk": "https://xoriguer.dev/baixades/LecturaXoriguer.apk", "apk_sha256": "CD"}"""
+        val a = assertNotNull(Actualitzacions.deVersioJson(json, "Android"))
+        assertEquals("0.7.1", a.versio)
+        assertEquals("https://xoriguer.dev/baixades/LecturaXoriguer.apk", a.baixada)
+        assertEquals("https://baixades.xoriguer.dev/LecturaXoriguer-Instalador.msi", Actualitzacions.deVersioJson(json, "Windows")!!.baixada)
+        assertEquals(Actualitzacions.PAGINA, Actualitzacions.deVersioJson(json, "iOS")!!.baixada)
     }
+
+    /** Amb el servidor de veritat (XARXA=1): el versio.json de xoriguer.dev s'ha de poder llegir. */
+    @Test fun versioJsonDeVeritat() = runBlocking {
+        if (System.getenv("XARXA") != "1") return@runBlocking
+        val r = assertNotNull(Actualitzacions.deVersioJson(Plataforma.descarrega(Actualitzacions.URL_VERSIO).decodeToString(), "Android"))
+        println("Publicada: ${r.versio} -> ${r.baixada}")
+        assertTrue(r.baixada.endsWith("LecturaXoriguer.apk"))
+    }
+
 }

@@ -12,11 +12,14 @@ import kotlin.time.ExperimentalTime
 data class VersioNova(val versio: String, val notes: String, val baixada: String, val pagina: String)
 
 /**
- * Avís de versions noves: mira la darrera Release de GitHub (com a molt un cop al dia)
+ * Avís de versions noves: mira https://xoriguer.dev/versions/lectura/versio.json (com a molt un cop al dia)
  * i diu si és més nova que la instal·lada. No instal·la res: només n'ofereix l'enllaç.
+ * (Fins a la 0.7.0 mirava les Releases de GitHub, que va suspendre el compte el 14/11/2026.)
  */
 object Actualitzacions {
     const val REPO = "Xorigu3r/xoriguer-lectura"
+    const val URL_VERSIO = "https://xoriguer.dev/versions/lectura/versio.json"
+    const val PAGINA = "https://xoriguer.dev/#utils"
     private const val FITXER = "actualitzacio.txt"
     private const val UN_DIA = 24L * 60 * 60 * 1000
 
@@ -52,6 +55,18 @@ object Actualitzacions {
         return VersioNova(tag.removePrefix("v"), notes, baixada, pagina)
     }
 
+    /** Llegeix el versio.json de xoriguer.dev ({versio, apk, url (instal·lador de Windows), notes}). */
+    fun deVersioJson(json: String, plataforma: String): VersioNova? {
+        val j = Json.llegeix(json)
+        val versio = j.text("versio") ?: return null
+        val baixada = when (plataforma) {
+            "Android" -> j.text("apk")
+            "Windows" -> j.text("url")
+            else -> null
+        } ?: PAGINA
+        return VersioNova(versio.removePrefix("v"), j.text("notes").orEmpty().trim(), baixada, PAGINA)
+    }
+
     /**
      * Torna la versió nova si n'hi ha. Sense `ara`, com a molt consulta internet un cop al dia
      * (la resta de vegades fa servir el que va trobar l'última vegada).
@@ -66,7 +81,7 @@ object Actualitzacions {
                 VersioNova(v, desat.drop(4).joinToString("\n"), desat.getOrElse(2) { "" }, desat.getOrElse(3) { "" })
             }
         } else {
-            val r = deRelease(Plataforma.descarrega("https://api.github.com/repos/$REPO/releases/latest").decodeToString(), Plataforma.nom)
+            val r = deVersioJson(Plataforma.descarrega(URL_VERSIO).decodeToString(), Plataforma.nom)
             Plataforma.desaDada(FITXER, listOf(avui.toString(), r?.versio.orEmpty(), r?.baixada.orEmpty(), r?.pagina.orEmpty(), r?.notes.orEmpty()).joinToString("\n"))
             r
         }
